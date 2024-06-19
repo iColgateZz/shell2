@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <termios.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #define BUF_SIZE 1024
 #define TOK_BUF_SIZE 64
@@ -50,6 +51,7 @@ int mark_process_status(pid_t pid, int status);
 void update_status();
 void mark_job_as_running(job *j);
 void continue_job(job *j, int foreground);
+job *find_job(pid_t pgid);
 
 pid_t shell_pgid;
 struct termios shell_tmodes;
@@ -63,6 +65,7 @@ int main(void)
     int status = 1;
     job *j;
 
+    /* Make sure the shell is a foreground process. */
     init_shell();
 
     if (!line_buffer)
@@ -78,6 +81,7 @@ int main(void)
 
     do
     {
+        /* Regular shell cycle. */
         printf("$ ");
         read_line(line_buffer);
         tokenize(tokens_buffer, line_buffer);
@@ -90,6 +94,10 @@ int main(void)
         if (strcmp(tokens_buffer[0], "exit") == 0)
         {
             status = 0;
+        }
+        else if (strcmp(tokens_buffer[0], "fg") == 0)
+        {
+            put_job_in_foreground(find_job(atoi(tokens_buffer[1])), 1);
         }
         else
         {
@@ -118,7 +126,8 @@ job *create_job(char **tokens, char *line)
     }
     j->command = strdup(line);
     j->stdin = STDIN_FILENO;
-    j->stdout = STDOUT_FILENO;
+    int fd = open("lol.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    j->stdout = fd;
     j->stderr = STDERR_FILENO;
     j->pgid = 0;
     j->notified = 0;
@@ -126,6 +135,7 @@ job *create_job(char **tokens, char *line)
     j->next = first_job;
     first_job = j;
 
+    /* Create the processes. */
     for (int i = 0; tokens[i] != NULL; i++)
     {
         if (strcmp(tokens[i], "|") == 0 || tokens[i + 1] == NULL)
@@ -245,7 +255,6 @@ int job_is_completed(job *j)
 
 /* Make sure the shell is running interactively as the foreground job
    before proceeding. */
-
 void init_shell()
 {
 
@@ -401,7 +410,6 @@ void launch_job(job *j, int foreground)
 /* Put job j in the foreground.  If cont is nonzero,
    restore the saved terminal modes and send the process group a
    SIGCONT signal to wake it up before we block.  */
-
 void put_job_in_foreground(job *j, int cont)
 {
     /* Put the job into the foreground.  */
@@ -417,6 +425,14 @@ void put_job_in_foreground(job *j, int cont)
 
     /* Wait for it to report.  */
     wait_for_job(j);
+    int last_proc_status;
+    process *p = j->first_process;
+    do
+    {
+        last_proc_status = p->status;
+        p = p->next;
+    } while (p);
+    printf("Job exit status : %d\n", last_proc_status);
 
     /* Put the shell back in the foreground.  */
     tcsetpgrp(shell_terminal, shell_pgid);
@@ -428,7 +444,6 @@ void put_job_in_foreground(job *j, int cont)
 
 /* Put a job in the background.  If the cont argument is true, send
    the process group a SIGCONT signal to wake it up.  */
-
 void put_job_in_background(job *j, int cont)
 {
     /* Send the job a continue signal, if necessary.  */
@@ -439,7 +454,6 @@ void put_job_in_background(job *j, int cont)
 
 /* Store the status of the process pid that was returned by waitpid.
    Return 0 if all went well, nonzero otherwise.  */
-
 int mark_process_status(pid_t pid, int status)
 {
     job *j;
@@ -480,7 +494,6 @@ int mark_process_status(pid_t pid, int status)
 
 /* Check for processes that have status information available,
    without blocking.  */
-
 void update_status(void)
 {
     int status;
@@ -493,7 +506,6 @@ void update_status(void)
 
 /* Check for processes that have status information available,
    blocking until all processes in the given job have reported.  */
-
 void wait_for_job(job *j)
 {
     int status;
@@ -505,7 +517,6 @@ void wait_for_job(job *j)
 }
 
 /* Format information about job status for the user to look at.  */
-
 void format_job_info(job *j, const char *status)
 {
     fprintf(stderr, "%ld (%s): %s\n", (long)j->pgid, status, j->command);
@@ -513,7 +524,6 @@ void format_job_info(job *j, const char *status)
 
 /* Notify the user about stopped or terminated jobs.
    Delete terminated jobs from the active job list.  */
-
 void do_job_notification(void)
 {
     job *j, *jlast, *jnext;
@@ -554,7 +564,6 @@ void do_job_notification(void)
 }
 
 /* Mark a stopped job J as being running again.  */
-
 void mark_job_as_running(job *j)
 {
     process *p;
@@ -565,7 +574,6 @@ void mark_job_as_running(job *j)
 }
 
 /* Continue the job J.  */
-
 void continue_job(job *j, int foreground)
 {
     mark_job_as_running(j);
@@ -575,6 +583,7 @@ void continue_job(job *j, int foreground)
         put_job_in_background(j, 1);
 }
 
+/* Free the job J. */
 void free_job(job *j)
 {
     process *p = j->first_process;
