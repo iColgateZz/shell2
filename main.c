@@ -7,6 +7,8 @@
 #include <termios.h>
 #include <errno.h>
 #include <fcntl.h>
+#include "builtin.h"
+#include "helpers.h"
 
 #define BUF_SIZE 1024
 #define TOK_BUF_SIZE 64
@@ -32,17 +34,32 @@ typedef struct job
     int stdin, stdout, stderr; /* standard i/o channels */
 } job;
 
+typedef enum
+{
+    FG_JOB,
+    BG_JOB,
+    OPERATOR
+} Type;
+
+typedef struct wrapper
+{
+    struct job *j;
+    char *oper;
+    Type type;
+    int exit_status;
+} wrapper;
+
 job *first_job = NULL;
 
 void read_line(char *buffer);
 void tokenize(char **buffer, char *line);
 void init_shell();
-job *create_job(char **tokens, char *line);
-void launch_job(job *j, int foreground);
+job *create_job(char **tokens, int start, int end);
+int launch_job(job *j, int foreground);
 void free_job(job *j);
 void do_job_notification();
 void wait_for_job(job *j);
-void put_job_in_foreground(job *j, int cont);
+int put_job_in_foreground(job *j, int cont);
 void put_job_in_background(job *j, int cont);
 void format_job_info(job *j, const char *status);
 int job_is_stopped(job *j);
@@ -52,6 +69,8 @@ void update_status();
 void mark_job_as_running(job *j);
 void continue_job(job *j, int foreground);
 job *find_job(pid_t pgid);
+wrapper **create_jobs(char **tokens);
+void launch_jobs(wrapper **list);
 
 pid_t shell_pgid;
 struct termios shell_tmodes;
@@ -60,20 +79,20 @@ int shell_is_interactive;
 
 int main(void)
 {
-    char *line_buffer = malloc(BUF_SIZE * sizeof(char));
-    char **tokens_buffer = malloc(TOK_BUF_SIZE * sizeof(char *));
+    char *line = malloc(BUF_SIZE * sizeof(char));
+    char **tokens = malloc(TOK_BUF_SIZE * sizeof(char *));
+    wrapper **list;
     int status = 1;
-    job *j;
 
     /* Make sure the shell is a foreground process. */
     init_shell();
 
-    if (!line_buffer)
+    if (!line)
     {
         fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
     }
-    if (!tokens_buffer)
+    if (!tokens)
     {
         fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
@@ -83,38 +102,155 @@ int main(void)
     {
         /* Regular shell cycle. */
         printf("$ ");
-        read_line(line_buffer);
-        tokenize(tokens_buffer, line_buffer);
-
-        if (tokens_buffer[0] == NULL)
-        {
-            continue; // Empty command
-        }
-
-        if (strcmp(tokens_buffer[0], "exit") == 0)
+        read_line(line);
+        tokenize(tokens, line);
+        if (strcmp(tokens[0], "exit") == 0)
         {
             status = 0;
         }
-        else if (strcmp(tokens_buffer[0], "fg") == 0)
+        else if (strcmp(tokens[0], "fg") == 0)
         {
-            put_job_in_foreground(find_job(atoi(tokens_buffer[1])), 1);
-        }
-        else
-        {
-            j = create_job(tokens_buffer, line_buffer);
-            launch_job(j, 1);
+            put_job_in_foreground(find_job(atoi(tokens[1])), 1);
         }
 
+        list = create_jobs(tokens);
+        if (list == NULL)
+        {
+            continue;
+        }
+        launch_jobs(list);
         do_job_notification();
 
     } while (status);
 
-    free(line_buffer);
-    free(tokens_buffer);
+    free(line);
+    free(tokens);
     return 0;
 }
 
-job *create_job(char **tokens, char *line)
+void launch_jobs(wrapper **list)
+{
+    printf("got heren\n");
+    int first = 1;
+    for (int i = 0; list[i] != NULL; i++)
+    {
+        printf("how many times\n");
+        if (first)
+        {
+            list[i]->exit_status = launch_job(list[i]->j, 1);
+            first = 0;
+        }
+        else if (list[i - 1]->type == OPERATOR && list[i]->type == FG_JOB)
+        {
+            if (strcmp(list[i - 1]->oper, ";") == 0)
+            {
+                list[i]->exit_status = launch_job(list[i]->j, 1);
+            }
+            else if (strcmp(list[i - 1]->oper, "&&") == 0)
+            {
+                if (list[i - 2]->exit_status == 0)
+                {
+                    list[i]->exit_status = launch_job(list[i]->j, 1);
+                }
+                else
+                {
+                    return;
+                }
+            }
+            else
+            {
+                if (list[i - 2]->exit_status != 0)
+                {
+                    list[i]->exit_status = launch_job(list[i]->j, 1);
+                }
+                else
+                {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+wrapper **create_jobs(char **tokens)
+{
+    int start = 0, end = 0, position = 0, endsWithSemiCol = 0;
+    if (tokens[0] == NULL)
+    {
+        return NULL; // Empty command
+    }
+    wrapper **list = malloc(TOK_BUF_SIZE * sizeof(wrapper *));
+    if (!list)
+    {
+        fprintf(stderr, "psh: allocation error\n");
+        exit(EXIT_FAILURE);
+    }
+
+    while (tokens[end] != NULL)
+    {
+        if (isOperator(tokens[end]) || endsWith(tokens[end], ';'))
+        {
+            wrapper *wr = malloc(sizeof(wrapper));
+            if (!wr)
+            {
+                fprintf(stderr, "psh: allocation error\n");
+                exit(EXIT_FAILURE);
+            }
+            wr->type = FG_JOB;
+            if (endsWith(tokens[end], ';'))
+            {
+                endsWithSemiCol = 1;
+                size_t len = strlen(tokens[end]);
+                tokens[end][len - 1] = '\0';
+                end++;
+            }
+            wr->j = create_job(tokens, start, end);
+            list[position++] = wr;
+
+            wrapper *wr2 = malloc(sizeof(wrapper));
+            if (!wr2)
+            {
+                fprintf(stderr, "psh: allocation error\n");
+                exit(EXIT_FAILURE);
+            }
+            wr2->type = OPERATOR;
+            wr2->oper = malloc(TOK_BUF_SIZE * sizeof(char));
+            if (!wr2->oper)
+            {
+                fprintf(stderr, "psh: allocation error\n");
+                exit(EXIT_FAILURE);
+            }
+            if (endsWithSemiCol)
+            {
+                wr2->oper = strdup(";");
+                endsWithSemiCol = 0;
+            }
+            else
+            {
+                wr2->oper = strdup(tokens[end]);
+            }
+            list[position++] = wr2;
+
+            start = end;
+        }
+        end++;
+    }
+    wrapper *wr = malloc(sizeof(wrapper));
+    if (!wr)
+    {
+        fprintf(stderr, "psh: allocation error\n");
+        exit(EXIT_FAILURE);
+    }
+    wr->type = FG_JOB;
+    wr->j = create_job(tokens, start, end);
+    list[position++] = wr;
+
+    list[position] = NULL;
+
+    return list;
+}
+
+job *create_job(char **tokens, int start, int end)
 {
     int last_pipe_index = 0;
     // Create a new job
@@ -124,19 +260,38 @@ job *create_job(char **tokens, char *line)
         fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
     }
-    j->command = strdup(line);
+    j->command = strdup(tokens[start]);
     j->stdin = STDIN_FILENO;
-    int fd = open("lol.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    j->stdout = fd;
+    // int fd = open("lol.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    j->stdout = STDOUT_FILENO;
     j->stderr = STDERR_FILENO;
     j->pgid = 0;
     j->notified = 0;
     j->first_process = NULL;
-    j->next = first_job;
-    first_job = j;
+    j->next = NULL;
+    if (first_job == NULL)
+    {
+        first_job = j;
+    }
+    else
+    {
+        job *temp = first_job;
+        while (1)
+        {
+            if (temp->next != NULL)
+            {
+                temp = temp->next;
+            }
+            else
+            {
+                temp->next = j;
+                break;
+            }
+        }
+    }
 
     /* Create the processes. */
-    for (int i = 0; tokens[i] != NULL; i++)
+    for (int i = start; i < end; i++)
     {
         if (strcmp(tokens[i], "|") == 0 || tokens[i + 1] == NULL)
         {
@@ -150,10 +305,16 @@ job *create_job(char **tokens, char *line)
             p->stopped = 0;
             p->next = NULL;
             p->argv = malloc(TOK_BUF_SIZE * sizeof(char *));
+            if (!p->argv)
+            {
+                fprintf(stderr, "psh: allocation error\n");
+                exit(EXIT_FAILURE);
+            }
             int position = 0;
             for (int j = last_pipe_index; j <= i; j++)
             {
-                if (strcmp(tokens[j], "|") != 0) {
+                if (strcmp(tokens[j], "|") != 0)
+                {
                     p->argv[position++] = tokens[j];
                 }
             }
@@ -343,7 +504,7 @@ void launch_process(process *p, pid_t pgid,
     exit(1);
 }
 
-void launch_job(job *j, int foreground)
+int launch_job(job *j, int foreground)
 {
     process *p;
     pid_t pid;
@@ -402,7 +563,7 @@ void launch_job(job *j, int foreground)
     if (!shell_is_interactive)
         wait_for_job(j);
     else if (foreground)
-        put_job_in_foreground(j, 0);
+        return put_job_in_foreground(j, 0);
     else
         put_job_in_background(j, 0);
 }
@@ -410,7 +571,7 @@ void launch_job(job *j, int foreground)
 /* Put job j in the foreground.  If cont is nonzero,
    restore the saved terminal modes and send the process group a
    SIGCONT signal to wake it up before we block.  */
-void put_job_in_foreground(job *j, int cont)
+int put_job_in_foreground(job *j, int cont)
 {
     /* Put the job into the foreground.  */
     tcsetpgrp(shell_terminal, j->pgid);
@@ -440,6 +601,8 @@ void put_job_in_foreground(job *j, int cont)
     /* Restore the shell’s terminal modes.  */
     tcgetattr(shell_terminal, &j->tmodes);
     tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
+
+    return last_proc_status;
 }
 
 /* Put a job in the background.  If the cont argument is true, send
