@@ -51,17 +51,15 @@ typedef struct wrapper
     int exit_status;
 } wrapper;
 
-job *first_job = NULL;
-
 void read_line(char *buffer);
 void tokenize(char **buffer, char *line);
 void init_shell();
 job *create_job(char **tokens, int start, int end);
-int launch_job(job *j, int foreground);
+void launch_job(job *j, int foreground);
 void free_job(job *j);
 void do_job_notification();
 void wait_for_job(job *j);
-int put_job_in_foreground(job *j, int cont);
+void put_job_in_foreground(job *j, int cont);
 void put_job_in_background(job *j, int cont);
 void format_job_info(job *j, const char *status);
 int job_is_stopped(job *j);
@@ -80,6 +78,8 @@ pid_t shell_pgid;
 struct termios shell_tmodes;
 int shell_terminal;
 int shell_is_interactive;
+job *first_job = NULL;
+int last_proc_exit_status, inverted;
 
 int main(void)
 {
@@ -120,7 +120,6 @@ int main(void)
         }
         status = launch_jobs(list);
         do_job_notification();
-
     } while (status);
 
     free(line);
@@ -173,32 +172,32 @@ int launch_jobs(wrapper **list)
                 continue;
             else
             {
-                list[i]->exit_status = launch_job(list[i]->j, 1);
-                if (list[i]->j->inverted)
-                {
-                    list[i]->exit_status = !list[i]->exit_status;
-                }
+                inverted = list[i]->j->inverted;
+                launch_job(list[i]->j, 1);
+                if (inverted)
+                    last_proc_exit_status = !last_proc_exit_status;
+                printf("The exit status of the process is %d\n", last_proc_exit_status);
             }
         }
         else if (list[i - 1]->type == OPERATOR && list[i]->type == FG_JOB)
         {
             if (strcmp(list[i - 1]->oper, ";") == 0)
             {
-                list[i]->exit_status = launch_job(list[i]->j, 1);
-                if (list[i]->j->inverted)
-                {
-                    list[i]->exit_status = !list[i]->exit_status;
-                }
+                inverted = list[i]->j->inverted;
+                launch_job(list[i]->j, 1);
+                if (inverted)
+                    last_proc_exit_status = !last_proc_exit_status;
+                printf("The exit status of the process is %d\n", last_proc_exit_status);
             }
             else if (strcmp(list[i - 1]->oper, "&&") == 0)
             {
-                if (list[i - 2]->exit_status == EXIT_SUCCESS)
+                if (last_proc_exit_status == EXIT_SUCCESS)
                 {
-                    list[i]->exit_status = launch_job(list[i]->j, 1);
-                    if (list[i]->j->inverted)
-                    {
-                        list[i]->exit_status = !list[i]->exit_status;
-                    }
+                    inverted = list[i]->j->inverted;
+                    launch_job(list[i]->j, 1);
+                    if (inverted)
+                        last_proc_exit_status = !last_proc_exit_status;
+                    printf("The exit status of the process is %d\n", last_proc_exit_status);
                 }
                 else
                 {
@@ -207,13 +206,13 @@ int launch_jobs(wrapper **list)
             }
             else
             {
-                if (list[i - 2]->exit_status != EXIT_SUCCESS)
+                if (last_proc_exit_status != EXIT_SUCCESS)
                 {
-                    list[i]->exit_status = launch_job(list[i]->j, 1);
-                    if (list[i]->j->inverted)
-                    {
-                        list[i]->exit_status = !list[i]->exit_status;
-                    }
+                    inverted = list[i]->j->inverted;
+                    launch_job(list[i]->j, 1);
+                    if (inverted)
+                        last_proc_exit_status = !last_proc_exit_status;
+                    printf("The exit status of the process is %d\n", last_proc_exit_status);
                 }
                 else
                 {
@@ -447,10 +446,11 @@ job *find_job(pid_t pgid)
 int job_is_stopped(job *j)
 {
     process *p;
-
     for (p = j->first_process; p; p = p->next)
         if (!p->completed && !p->stopped)
+        {
             return 0;
+        }
     return 1;
 }
 
@@ -458,10 +458,11 @@ int job_is_stopped(job *j)
 int job_is_completed(job *j)
 {
     process *p;
-
     for (p = j->first_process; p; p = p->next)
         if (!p->completed)
+        {
             return 0;
+        }
     return 1;
 }
 
@@ -486,7 +487,19 @@ void init_shell()
         signal(SIGTSTP, SIG_IGN);
         signal(SIGTTIN, SIG_IGN);
         signal(SIGTTOU, SIG_IGN);
-        signal(SIGCHLD, SIG_IGN);
+        // signal(SIGCHLD, SIG_IGN);
+
+        // struct sigaction sa_tstp;
+        // sa_tstp.sa_handler = do_job_notification;
+        // sa_tstp.sa_flags = 0;
+        // sigemptyset(&sa_tstp.sa_mask);
+        // sigaction(SIGTSTP, &sa_tstp, NULL);
+
+        // struct sigaction sa_chld;
+        // sa_chld.sa_handler = &print_sig;
+        // sa_chld.sa_flags = SA_RESTART;
+        // sigemptyset(&sa_chld.sa_mask);
+        // sigaction(SIGCHLD, &sa_chld, NULL);
 
         /* Put ourselves in our own process group.  */
         shell_pgid = getpid();
@@ -555,7 +568,7 @@ void launch_process(process *p, pid_t pgid,
     exit(1);
 }
 
-int launch_job(job *j, int foreground)
+void launch_job(job *j, int foreground)
 {
     process *p;
     pid_t pid;
@@ -614,7 +627,7 @@ int launch_job(job *j, int foreground)
     if (!shell_is_interactive)
         wait_for_job(j);
     else if (foreground)
-        return put_job_in_foreground(j, 0);
+        put_job_in_foreground(j, 0);
     else
         put_job_in_background(j, 0);
 }
@@ -645,7 +658,7 @@ int execute(job *j, int foreground)
 /* Put job j in the foreground.  If cont is nonzero,
    restore the saved terminal modes and send the process group a
    SIGCONT signal to wake it up before we block.  */
-int put_job_in_foreground(job *j, int cont)
+void put_job_in_foreground(job *j, int cont)
 {
     /* Put the job into the foreground.  */
     tcsetpgrp(shell_terminal, j->pgid);
@@ -660,13 +673,6 @@ int put_job_in_foreground(job *j, int cont)
 
     /* Wait for it to report.  */
     wait_for_job(j);
-    int last_proc_status;
-    process *p = j->first_process;
-    do
-    {
-        last_proc_status = p->exit_status;
-        p = p->next;
-    } while (p);
 
     /* Put the shell back in the foreground.  */
     tcsetpgrp(shell_terminal, shell_pgid);
@@ -674,8 +680,6 @@ int put_job_in_foreground(job *j, int cont)
     /* Restore the shell’s terminal modes.  */
     tcgetattr(shell_terminal, &j->tmodes);
     tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
-
-    return last_proc_status;
 }
 
 /* Put a job in the background.  If the cont argument is true, send
@@ -694,7 +698,6 @@ int mark_process_status(pid_t pid, int status)
 {
     job *j;
     process *p;
-
     if (pid > 0)
     {
         /* Update the record for the process.  */
@@ -713,12 +716,14 @@ int mark_process_status(pid_t pid, int status)
                         if (WIFEXITED(status))
                         {
                             p->exit_status = WEXITSTATUS(status); // Store the exit code
+                            last_proc_exit_status = p->exit_status;
                         }
                         else if (WIFSIGNALED(status))
                         {
                             p->exit_status = WTERMSIG(status); // Store the signal number
                             fprintf(stderr, "%d: Terminated by signal %d.\n",
                                     (int)pid, WTERMSIG(p->status));
+                            last_proc_exit_status = p->exit_status;
                         }
                     }
                     return 0;
@@ -745,8 +750,9 @@ void update_status(void)
     pid_t pid;
 
     do
+    {
         pid = waitpid(WAIT_ANY, &status, WUNTRACED | WNOHANG);
-    while (!mark_process_status(pid, status));
+    } while (!mark_process_status(pid, status));
 }
 
 /* Check for processes that have status information available,
@@ -758,7 +764,7 @@ void wait_for_job(job *j)
 
     do
     {
-        pid = waitpid(WAIT_ANY, &status, WUNTRACED);
+        pid = waitpid(-j->pgid, &status, WUNTRACED);
     } while (!mark_process_status(pid, status) && !job_is_stopped(j) && !job_is_completed(j));
 }
 
