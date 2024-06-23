@@ -45,3 +45,21 @@ char *trim(char *str)
 
     return str;
 }
+
+char *concat_line(char **tokens, int start, int end) 
+{
+    char *str = malloc(256 * sizeof(char));
+    if (!str)
+    {
+        perror("allocation error");
+        exit(1);
+    }
+    int pos = 0;
+    for (int i = start; i < end; i++) {
+        for (int j = 0; tokens[i][j] != '\0'; j++) {
+            str[pos++] = tokens[i][j];
+        }
+        str[pos++] = ' ';
+    }
+    return str;
+}

@@ -3,29 +3,9 @@
 #include <string.h>
 #include <unistd.h>
 #include "builtin.h"
+#include "main.h"
 
-// Function prototypes for built-in commands
-int psh_cd(char **args);
-int psh_help(char **args);
-int psh_exit(char **args);
-
-// Array of built-in command strings
-char *builtin_str[] = {
-    "cd",
-    "help",
-    "exit"
-};
-
-// Array of built-in command function pointers
-builtin_func func_arr[] = {
-    &psh_cd,
-    &psh_help,
-    &psh_exit
-};
-
-int psh_num_builtins() {
-    return sizeof(builtin_str) / sizeof(char *);
-}
+extern job *first_job;
 
 int psh_cd(char **args) {
     if (args[1] == NULL) {
@@ -52,4 +32,43 @@ int psh_help(char **args) {
 
 int psh_exit(char **args) {
     return 0;
+}
+
+int psh_jobs(char **args) {
+    int counter = 1;
+    job *j = first_job;
+    char *str;
+    while (j)
+    {
+        if (j->pgid != 0)
+        {
+            if (job_is_stopped(j))
+                str = "stopped";
+            else
+                str = "running";
+            printf("[%d] %s %d %s\n", counter++, str, j->pgid, j->command);   
+        }
+        j = j->next;
+    }
+    return 1;
+}
+
+// Array of built-in command function pointers
+builtin_func func_arr[] = {
+    &psh_cd,
+    &psh_help,
+    &psh_exit,
+    &psh_jobs
+};
+
+// Array of built-in command strings
+char *builtin_str[] = {
+    "cd",
+    "help",
+    "exit",
+    "jobs"
+};
+
+int psh_num_builtins() {
+    return sizeof(builtin_str) / sizeof(char *);
 }
