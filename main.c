@@ -308,22 +308,44 @@ job *create_job(char **tokens, int start, int end)
             {
                 if (strcmp(tokens[j], "|") != 0)
                 {
-                    p->argv[position++] = strdup(tokens[j]);
+                    if (tokens[j][0] == '"')
+                    {
+                        char *str_in_quotes = malloc(TOK_BUF_SIZE * sizeof(char));
+                        if (!str_in_quotes)
+                        {
+                            fprintf(stderr, "psh: allocation error\n");
+                            exit(EXIT_FAILURE);
+                        }
+
+                        tokens[j][0] = ' ';
+                        tokens[j] = trim(tokens[j]);
+                        while (tokens[j] && j <= i && !endsWith(tokens[j], '"'))
+                        {
+                            strcat(str_in_quotes, tokens[j]);
+                            strcat(str_in_quotes, " ");
+                            j++;
+                        }
+                        if (tokens[j]) // this might be the break point to continue line reading if no " at the end.
+                        {
+                            tokens[j][strlen(tokens[j]) - 1] = ' ';
+                            tokens[j] = trim(tokens[j]);
+                            strcat(str_in_quotes, tokens[j]);
+                        }
+                        p->argv[position++] = strdup(str_in_quotes);
+                    }
+                    else
+                        p->argv[position++] = strdup(tokens[j]);
                 }
             }
             p->argv[position] = NULL;
             last_pipe_index = i + 1;
             if (j->first_process == NULL)
-            {
                 j->first_process = p;
-            }
             else
             {
                 process *proc = j->first_process;
                 while (proc->next != NULL)
-                {
                     proc = proc->next;
-                }
                 proc->next = p;
             }
         }
