@@ -14,6 +14,7 @@ char *redirection[] = {
     ">",
     ">>",
     "<",
+    "2>",
     NULL
 };
 

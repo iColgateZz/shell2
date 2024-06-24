@@ -346,10 +346,10 @@ job *create_job(char **tokens, int start, int end)
                             p->outfile = tokens[j + 1];
                             p->append_mode = 1;
                         }
-                        else
-                        {
+                        else if (strcmp(tokens[j], "<") == 0)
                             p->infile = tokens[j + 1];
-                        }
+                        else if (strcmp(tokens[j], "2>") == 0)
+                            p->errfile = tokens[j + 1];
                         j++;
                     }
                     else
