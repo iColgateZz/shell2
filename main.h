@@ -31,6 +31,7 @@ typedef struct job
     struct termios tmodes;     /* saved terminal modes */
     int stdin, stdout, stderr; /* standard i/o channels */
     int inverted;              /* inversion of the exit status */
+    int in_bg;                 /* true if job is running in background. */
 } job;
 
 typedef enum

@@ -4,51 +4,193 @@
 #include <unistd.h>
 #include "builtin.h"
 #include "main.h"
+#include <ctype.h>
 
 extern job *first_job;
 
-int psh_cd(char **args) {
-    if (args[1] == NULL) {
+int psh_cd(char **args)
+{
+    if (args[1] == NULL)
+    {
         fprintf(stderr, "psh: expected argument to \"cd\"\n");
-    } else {
-        if (chdir(args[1]) != 0) {
+    }
+    else
+    {
+        if (chdir(args[1]) != 0)
+        {
             perror("psh");
         }
     }
     return 1;
 }
 
-int psh_help(char **args) {
+int psh_help(char **args)
+{
     int i;
     printf("PSH\n");
     printf("Type program names and arguments, and hit enter.\n");
     printf("The following are built in:\n");
-    for (i = 0; i < psh_num_builtins(); i++) {
+    for (i = 0; i < psh_num_builtins(); i++)
+    {
         printf("  %s\n", builtin_str[i]);
     }
     printf("Use the \"man\" command for information on other programs.\n");
     return 1;
 }
 
-int psh_exit(char **args) {
+int psh_exit(char **args)
+{
     return 0;
 }
 
-int psh_jobs(char **args) {
+/* Find the last job that was stopped or started running in the background. */
+job *_find_last_stopped_or_bg_job()
+{
+    job *j = first_job;
+    job *last_stopped_or_bg = NULL;
+
+    while (j)
+    {
+        if (job_is_stopped(j) || j->in_bg)
+            last_stopped_or_bg = j;
+        j = j->next;
+    }
+    return last_stopped_or_bg;
+}
+
+/* Find the last job that was stopped with Ctrl + Z or SIGTSTP. */
+job *_find_last_stopped_job()
+{
+    job *j = first_job;
+    job *last_stopped = NULL;
+
+    while (j)
+    {
+        if (job_is_stopped(j))
+            last_stopped = j;
+        j = j->next;
+    }
+    return last_stopped;
+}
+
+int psh_jobs(char **args)
+{
     int counter = 1;
     job *j = first_job;
-    char *str;
+    job *last_stopped = _find_last_stopped_job();
+    char *stopped_or_running;
+    char *plus_or_minus;
     while (j)
     {
         if (j->pgid != 0)
         {
             if (job_is_stopped(j))
-                str = "stopped";
+                stopped_or_running = "stopped";
             else
-                str = "running";
-            printf("[%d] %s %d %s\n", counter++, str, j->pgid, j->command);   
+                stopped_or_running = "running";
+            if (last_stopped && j->pgid == last_stopped->pgid)
+                plus_or_minus = "+";
+            else if (last_stopped)
+                plus_or_minus = "-";
+            printf("[%d] %s %s %d %s\n", counter++, plus_or_minus, stopped_or_running, j->pgid, j->command);
         }
         j = j->next;
+    }
+    return 1;
+}
+
+/* Check if given string contains of only digits. If not, return -1.
+   Else return the string converted to the integer type. */
+int _check_if_str_is_valid(char *str)
+{
+    int i = 0;
+    int isValid = 1;
+    int num = -1;
+    if (str[0] == '%')
+        i = 1;
+    while (str[i] != '\0')
+    {
+        if (!isdigit(str[i]))
+        {
+            isValid = 0;
+            break;
+        }
+        i++;
+    }
+
+    if (isValid)
+    {
+        if (str[0] == '%')
+            num = atoi(&str[1]);
+        else
+            num = atoi(str);
+    }
+    return num;
+}
+
+/* If a job is stopped and has the same index as the one provided, return it.
+   Else return NULL. */
+job *_find_job_by_index(int index)
+{
+    job *temp = first_job;
+    int counter = 1;
+    while (temp)
+    {
+        if (temp->pgid != 0)
+        {
+            if (counter == index)
+            {
+                if (job_is_stopped(temp))
+                    return temp;
+                else
+                    return NULL;
+            }
+            counter++;
+        }
+    }
+    return NULL;
+}
+
+int psh_fg(char **args)
+{
+    if (args[1] == NULL)
+    {
+        continue_job(_find_last_stopped_or_bg_job(), 1);
+        return 1;
+    }
+    int num;
+    for (int i = 1; args[i] != NULL; i++)
+    {
+        num = _check_if_str_is_valid(args[i]);
+        if (num == -1)
+            continue;
+
+        if (args[i][0] == '%')
+            continue_job(_find_job_by_index(num), 1); // index
+        else
+            continue_job(find_job(num), 1); // pid
+    }
+    return 1;
+}
+
+int psh_bg(char **args)
+{
+    if (args[1] == NULL)
+    {
+        continue_job(_find_last_stopped_job(), 0);
+        return 1;
+    }
+    int num;
+    for (int i = 1; args[i] != NULL; i++)
+    {
+        num = _check_if_str_is_valid(args[i]);
+        if (num == -1)
+            continue;
+
+        if (args[i][0] == '%')
+            continue_job(_find_job_by_index(num), 0); // index
+        else
+            continue_job(find_job(num), 0); // pid
     }
     return 1;
 }
@@ -58,7 +200,9 @@ builtin_func func_arr[] = {
     &psh_cd,
     &psh_help,
     &psh_exit,
-    &psh_jobs
+    &psh_jobs,
+    &psh_fg,
+    &psh_bg    
 };
 
 // Array of built-in command strings
@@ -66,9 +210,12 @@ char *builtin_str[] = {
     "cd",
     "help",
     "exit",
-    "jobs"
+    "jobs",
+    "fg",
+    "bg"
 };
 
-int psh_num_builtins() {
+int psh_num_builtins()
+{
     return sizeof(builtin_str) / sizeof(char *);
 }

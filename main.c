@@ -613,6 +613,7 @@ void put_job_in_background(job *j, int cont)
     if (cont)
         if (kill(-j->pgid, SIGCONT) < 0)
             perror("kill (SIGCONT)");
+    j->in_bg = 1;
 }
 
 /* Store the status of the process pid that was returned by waitpid.
@@ -760,6 +761,8 @@ void mark_job_as_running(job *j)
 /* Continue the job J.  */
 void continue_job(job *j, int foreground)
 {
+    if (j == NULL)
+        return;
     mark_job_as_running(j);
     if (foreground)
         put_job_in_foreground(j, 1);
