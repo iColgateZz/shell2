@@ -7,13 +7,31 @@ char *operators[] = {
     ";",
     "&&",
     "||",
-    NULL};
+    NULL
+};
+
+char *redirection[] = {
+    ">",
+    ">>",
+    "<",
+    NULL
+};
 
 int isOperator(char *str)
 {
     for (int i = 0; operators[i] != NULL; i++)
     {
         if (strcmp(operators[i], str) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+int isRedirection(char *str)
+{
+    for (int i = 0; redirection[i] != NULL; i++)
+    {
+        if (strcmp(redirection[i], str) == 0)
             return 1;
     }
     return 0;

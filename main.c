@@ -262,16 +262,12 @@ job *create_job(char **tokens, int start, int end)
     j->next = NULL;
     j->inverted = 0;
     if (first_job == NULL)
-    {
         first_job = j;
-    }
     else
     {
         job *temp = first_job;
         while (temp->next != NULL)
-        {
             temp = temp->next;
-        }
         temp->next = j;
     }
 
@@ -303,11 +299,16 @@ job *create_job(char **tokens, int start, int end)
                 fprintf(stderr, "psh: allocation error\n");
                 exit(EXIT_FAILURE);
             }
+            p->infile = NULL;
+            p->outfile = NULL;
+            p->errfile = NULL;
+
             int position = 0;
             for (int j = last_pipe_index; j <= i; j++)
             {
                 if (strcmp(tokens[j], "|") != 0)
                 {
+                    // for quoting
                     if (tokens[j][0] == '"')
                     {
                         char *str_in_quotes = malloc(TOK_BUF_SIZE * sizeof(char));
@@ -332,6 +333,24 @@ job *create_job(char **tokens, int start, int end)
                             strcat(str_in_quotes, tokens[j]);
                         }
                         p->argv[position++] = strdup(str_in_quotes);
+                    }
+                    else if (isRedirection(tokens[j]))
+                    {
+                        if (strcmp(tokens[j], ">") == 0)
+                        {
+                            p->outfile = tokens[j + 1];
+                            p->append_mode = 0;
+                        }
+                        else if (strcmp(tokens[j], ">>") == 0)
+                        {
+                            p->outfile = tokens[j + 1];
+                            p->append_mode = 1;
+                        }
+                        else
+                        {
+                            p->infile = tokens[j + 1];
+                        }
+                        j++;
                     }
                     else
                         p->argv[position++] = strdup(tokens[j]);
@@ -488,6 +507,44 @@ void launch_process(process *p, pid_t pgid,
         signal(SIGTTIN, SIG_DFL);
         signal(SIGTTOU, SIG_DFL);
         signal(SIGCHLD, SIG_DFL);
+        signal(SIGHUP, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+    }
+
+    // Handle input redirection
+    if (p->infile)
+    {
+        infile = open(p->infile, O_RDONLY);
+        if (infile < 0)
+        {
+            perror("open input file");
+            exit(1);
+        }
+    }
+
+    // Handle output redirection
+    if (p->outfile)
+    {
+        if (p->append_mode)
+            outfile = open(p->outfile, O_WRONLY | O_CREAT | O_APPEND, 0644);
+        else
+            outfile = open(p->outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (outfile < 0)
+        {
+            perror("open output file");
+            exit(1);
+        }
+    }
+
+    // Handle error redirection
+    if (p->errfile)
+    {
+        errfile = open(p->errfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (errfile < 0)
+        {
+            perror("open error file");
+            exit(1);
+        }
     }
 
     /* Set the standard input/output channels of the new process.  */
@@ -518,10 +575,15 @@ void launch_job(job *j, int foreground)
     process *p;
     pid_t pid;
     int mypipe[2], infile, outfile;
+    char *prev_proc_outfile;
 
     infile = j->stdin;
     for (p = j->first_process; p; p = p->next)
     {
+        prev_proc_outfile = NULL;
+        if (p->outfile)
+            prev_proc_outfile = p->outfile;
+        
         /* Set up pipes, if necessary.  */
         if (p->next)
         {
@@ -565,6 +627,11 @@ void launch_job(job *j, int foreground)
         if (outfile != j->stdout)
             close(outfile);
         infile = mypipe[0];
+        if (prev_proc_outfile)
+        {
+            close(infile);
+            infile = open(prev_proc_outfile, O_RDONLY);
+        }
     }
 
     format_job_info(j, "launched");

@@ -40,6 +40,15 @@ int psh_help(char **args)
 
 int psh_exit(char **args)
 {
+    // send sighup to every job.
+    job *j2 = first_job;
+    while (j2)
+    {
+        if (j2->pgid > 0 && killpg(j2->pgid, SIGHUP) < 0)
+                perror("kill (SIGHUP)");
+        j2 = j2->next;
+    }
+    
     return 0;
 }
 

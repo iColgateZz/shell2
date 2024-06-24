@@ -12,13 +12,15 @@
 
 typedef struct process
 {
-    struct process *next; /* next process in pipeline */
-    char **argv;          /* for exec */
-    pid_t pid;            /* process ID */
-    char completed;       /* true if process has completed */
-    char stopped;         /* true if process has stopped */
-    int status;           /* reported status value */
-    int exit_status;      /* actual exit status */
+    struct process *next;            /* next process in pipeline */
+    char **argv;                     /* for exec */
+    pid_t pid;                       /* process ID */
+    char completed;                  /* true if process has completed */
+    char stopped;                    /* true if process has stopped */
+    int status;                      /* reported status value */
+    int exit_status;                 /* actual exit status */
+    char *infile, *outfile, *errfile; /* i/o channel names */
+    int append_mode;                 /* true if appending */
 } process;
 
 typedef struct job
