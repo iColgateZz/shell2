@@ -1,0 +1,100 @@
+#!/usr/bin/expect
+
+# Set the environment variable for non-interactive mode
+set env(PSH_NON_INTERACTIVE) 1
+
+# Function to run a command in the real shell and capture the output
+proc run_real_shell {cmd} {
+    set output [exec bash -c $cmd]
+    return $output
+}
+
+# Function to run a command in your shell and capture the output
+proc run_psh {cmd} {
+    spawn ./psh
+    expect "$ "
+    send "$cmd\r"
+    expect "$ "
+    set output $expect_out(buffer)
+    send "exit\r"
+    expect "$ "
+    # expect eof
+    # Remove the command itself and the prompt from the output
+    set output [string map [list "$cmd\r\n" "" "\r\n$ " ""] $output]
+    return $output
+}
+
+# Function to compare the outputs
+proc compare_outputs {real_output psh_output} {
+    if {[string trim $real_output] eq [string trim $psh_output]} {
+        puts "\033\[32mTest passed: Outputs are identical\033\[0m"  ;# Green text for pass
+    } else {
+        puts "\033\[31mTest failed: Outputs differ\033\[0m"  ;# Red text for fail
+        puts "\033\[31mReal shell output: $real_output\033\[0m"
+        puts "\033\[31mPSH output: $psh_output\033\[0m"
+    }
+}
+
+# List of commands to test
+set commands {
+    "pwd"
+    "echo Hello, World!"
+    "ls -l"
+    "date"
+    "whoami"
+    "uname -a"
+    "echo haha    &&    echo   lol   "
+    "echo \?"
+    "echo \"Hello, World!\""
+    "true && ! false && echo nice"
+    "true && false || echo nice"
+    "! false && false || echo nice"
+    "pwd | ls -al"
+    "pwd | ls -al"
+    "pwd | cat | cat | cat | cat"
+    "pwd | ls -al | grep a | wc -l"
+    "pwd | ls -al && echo haha"
+    "! pwd | ls -al || echo haha"
+    "! pwd | ls -al | grep a ||     echo haha | cat"
+    "echo \"hello world\" | tr 'a-z' 'A-Z'"
+    "find . -type f | wc -l"
+    "echo \"\" | wc -l"
+    "ls | sort | head -n 5"
+    "find . -type f -exec ls -s {} + | sort -n | tail -n 5"
+    "echo haha > out/lol.txt && cat out/lol.txt"
+    "echo haha > out/lol.txt && echo extra >> out/lol.txt && cat out/lol.txt"
+    "wc -l < out/lol.txt && echo hello world"
+    "! wc -l < out/lol.txt || echo hello world"
+    "wc -l < out/lol.txt || echo hello world"
+    "find . -type f -iname \"*.c\" -print0 | xargs -0 cat | wc -l"
+}
+
+# Problems
+# "yes \"test\" | head -n 10"
+# "echo haha \\nlol"
+# "echo \"   Timmy \\\\ haha\""
+
+# Open files for writing outputs
+set real_shell_file [open "out/real_shell_output.txt" "w"]
+set psh_file [open "out/psh_output.txt" "w"]
+
+# Run tests
+foreach cmd $commands {
+    puts "Testing command: $cmd"
+    set real_output [run_real_shell $cmd]
+    set psh_output [run_psh $cmd]
+    
+    # Write outputs to files
+    puts $real_shell_file "Command: $cmd\n$real_output\n-----------------------------"
+    puts $psh_file "Command: $cmd\n$psh_output\n-----------------------------"
+    
+    # compare_outputs $real_output $psh_output
+    puts "-----------------------------"
+}
+
+# Close files
+close $real_shell_file
+close $psh_file
+
+# Unset the environment variable
+set env(PSH_NON_INTERACTIVE) ""

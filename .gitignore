@@ -3,3 +3,7 @@
 !*.h
 !.gitignore
 !Makefile
+!test
+!/out/
+!/out/script.py
+!/out/test.exp

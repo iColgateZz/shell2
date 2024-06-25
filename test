@@ -1,0 +1,3 @@
+#!/bin/bash
+
+bash -c "out/test.exp && out/script.py"
