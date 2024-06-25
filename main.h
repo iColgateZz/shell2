@@ -43,6 +43,20 @@ typedef enum
     OPERATOR
 } Type;
 
+typedef enum Token_Type
+{
+    CMD,
+    ARG,
+    REDIRECTION,
+    PIPE,
+    OPER,
+    LINE_CONTINUATION,
+    INVERSION,
+    QUOTE,
+    QUOTE_END,
+    END
+} Token_Type;
+
 typedef struct wrapper
 {
     struct job *j;
@@ -73,3 +87,4 @@ wrapper **create_jobs(char **tokens);
 int launch_jobs(wrapper **list);
 void print_list(wrapper **list);
 int execute(job *j, int foreground);
+int check_tokens(char **tokens);

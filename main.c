@@ -27,6 +27,8 @@ int main(void)
     char **tokens = malloc(TOK_BUF_SIZE * sizeof(char *));
     wrapper **list;
     int status = 1;
+    int check_status;
+    int prompt_type = 0;
 
     /* Make sure the shell is a foreground process. */
     init_shell();
@@ -45,25 +47,321 @@ int main(void)
     do
     {
         /* Regular shell cycle. */
-        printf("$ ");
+        if (prompt_type == 0)
+            printf("$ ");
+        else
+            printf("> ");
         read_line(line);
         line = trim(line);
         if (line[0] == '\0')
-        {
             continue;
-        }
         tokenize(tokens, line);
-        list = create_jobs(tokens);
-        if (list == NULL)
+        if ((check_status = check_tokens(tokens)) == 0)
         {
+            list = create_jobs(tokens);
+            if (list == NULL)
+                continue;
+            status = launch_jobs(list);
+            do_job_notification();
+            prompt_type = 0;
+            line[0] = '\0';
+        }
+        else if (check_status == 1)
+        {
+            prompt_type = 1;
             continue;
         }
-        status = launch_jobs(list);
-        do_job_notification();
+        else
+        {
+            line[0] = '\0';
+            prompt_type = 0;
+            continue;
+        }
     } while (status);
 
     free(line);
     free(tokens);
+    return 0;
+}
+
+int *categorize_tokens(char **tokens)
+{
+    int arr[TOK_BUF_SIZE];
+    int pos = 0, first = 1;
+    for (int i = 0; tokens[i] != NULL; i++)
+    {
+        switch (tokens[i][0])
+        {
+        case '!':
+            if (first)
+                arr[pos++] = INVERSION;
+            else
+                arr[pos++] = ARG;
+            break;
+        case '|':
+            arr[pos++] = PIPE;
+            first = 1;
+            break;
+        case '\\':
+            arr[pos++] = LINE_CONTINUATION;
+            break;
+        case '"':
+            arr[pos++] = QUOTE;
+            while (tokens[i] && !endsWith(tokens[i], '"'))
+            {
+                i++;
+            }
+            if (!tokens[i])
+            {
+                arr[pos] = END;
+                return arr;
+            }
+            arr[pos++] = QUOTE_END;
+            break;
+        default:
+            if (isRedirection(tokens[i]))
+                arr[pos++] = REDIRECTION;
+            else if (isOperator(tokens[i]))
+            {
+                arr[pos++] = OPER;
+                first = 1;
+            }
+            else if (first)
+            {
+                arr[pos++] = CMD;
+                first = 0;
+            }
+            else
+                arr[pos++] = ARG;
+            break;
+        }
+    }
+    arr[pos] = END;
+
+    return arr;
+}
+
+/* Return 1 if line continuation is needed, -1 if error occured, 0 - success. */
+int check_tokens(char **tokens)
+{
+    int *arr = categorize_tokens(tokens);
+    int first = 1;
+    int last_token, next_token;
+    for (int i = 0; arr[i] != END; i++)
+    {
+        next_token = arr[i + 1];
+        if (first)
+        {
+            if (arr[i] == INVERSION)
+            {
+                if (next_token == CMD)
+                {
+                    last_token = INVERSION;
+                    continue;
+                }
+                else if (next_token == LINE_CONTINUATION)
+                    return 1;
+                else
+                {
+                    perror("Wrong after '!'");
+                    return -1;
+                }
+            }
+            else if (arr[i] == CMD)
+            {
+                first = 0;
+                last_token = CMD;
+                continue;
+            }
+            else
+            {
+                perror("Wrong first word!");
+                return -1;
+            }
+        }
+        switch (arr[i])
+        {
+        case ARG:
+            if (last_token == CMD ||
+                last_token == ARG ||
+                last_token == QUOTE_END)
+            {
+                if (next_token != CMD &&
+                    next_token != INVERSION)
+                {
+                    last_token = ARG;
+                    break;
+                }
+                else
+                {
+                    perror("Wrong after ARG!");
+                    return -1;
+                }
+            }
+            else if (last_token == REDIRECTION)
+            {
+                if (next_token == REDIRECTION ||
+                    next_token == LINE_CONTINUATION ||
+                    next_token == PIPE ||
+                    next_token == END ||
+                    next_token == OPER ||
+                    next_token == END)
+                {
+                    last_token = ARG;
+                    break;
+                }
+                else
+                {
+                    perror("Wrong after ARG2!");
+                    return -1;
+                }
+            }
+            else
+            {
+                perror("Weird error 1!");
+                return -1;
+            }
+
+        case PIPE:
+            if (last_token == CMD ||
+                last_token == ARG ||
+                last_token == QUOTE_END)
+            {
+                if (next_token == CMD ||
+                    next_token == INVERSION)
+                {
+                    first = 1;
+                    last_token = PIPE;
+                    break;
+                }
+                else if (next_token == END ||
+                         next_token == LINE_CONTINUATION)
+                    return 1;
+                else
+                {
+                    perror("Wrong after PIPE!");
+                    return -1;
+                }
+            }
+            else
+            {
+                perror("Weird error 2!");
+                return -1;
+            }
+
+        case REDIRECTION:
+            if (last_token == CMD ||
+                last_token == ARG ||
+                last_token == QUOTE_END)
+            {
+                if (next_token == ARG ||
+                    next_token == QUOTE_END)
+                {
+                    last_token = REDIRECTION;
+                    break;
+                }
+                else if (next_token == END ||
+                         next_token == LINE_CONTINUATION)
+                    return 1;
+                else
+                {
+                    perror("Wrong after REDIRECTION!");
+                    return -1;
+                }
+            }
+            else
+            {
+                perror("Weird error 3!");
+                return -1;
+            }
+
+        case OPER:
+            if (last_token == CMD ||
+                last_token == ARG ||
+                last_token == QUOTE_END)
+            {
+                if (next_token == CMD ||
+                    next_token == INVERSION)
+                {
+                    first = 1;
+                    last_token = OPER;
+                    break;
+                }
+                else if (next_token == END ||
+                         next_token == LINE_CONTINUATION)
+                    return 1;
+                else
+                {
+                    perror("Wrong after OPERATOR!");
+                    return -1;
+                }
+            }
+            else
+            {
+                perror("Weird error 4!");
+                return -1;
+            }
+
+        case LINE_CONTINUATION:
+            if (next_token == END)
+                return 1;
+            else
+            {
+                perror("Wrong after LINE_CONT!");
+                return -1;
+            }
+
+        case QUOTE:
+            if (last_token == CMD ||
+                last_token == ARG ||
+                last_token == QUOTE ||
+                last_token == QUOTE_END)
+            {
+                if (next_token == QUOTE ||
+                    next_token == QUOTE_END)
+                {
+                    last_token = QUOTE;
+                    break;
+                }
+                else if (next_token == END ||
+                         next_token == LINE_CONTINUATION)
+                    return 1;
+                else
+                {
+                    perror("Wrong after QUOTE!");
+                    return -1;
+                }
+            }
+            else
+            {
+                perror("Weird error 5!");
+                return -1;
+            }
+
+        case QUOTE_END:
+            if (last_token == CMD ||
+                last_token == ARG ||
+                last_token == QUOTE)
+            {
+                if (next_token != CMD &&
+                    next_token != INVERSION)
+                {
+                    last_token = QUOTE_END;
+                    break;
+                }
+                else
+                {
+                    perror("Wrong after QUOTE!");
+                    return -1;
+                }
+            }
+            else
+            {
+                perror("Weird error 6!");
+                return -1;
+            }
+        }
+    }
     return 0;
 }
 
@@ -375,8 +673,16 @@ job *create_job(char **tokens, int start, int end)
 
 void read_line(char *buffer)
 {
-    int position = 0;
+    int position = strlen(buffer);
     int c;
+
+    if (position != 0)
+    {
+        if (buffer[position - 1] == '\\')
+            buffer[position - 1] = ' ';
+        else
+            buffer[position++] = ' ';
+    }
 
     while (1)
     {
@@ -397,7 +703,9 @@ void read_line(char *buffer)
 void tokenize(char **buffer, char *line)
 {
     int position = 0;
-    char *token = strtok(line, " ");
+    char *copy = malloc(BUF_SIZE * sizeof(char));
+    strcpy(copy, line);
+    char *token = strtok(copy, " ");
 
     while (token != NULL)
     {
@@ -406,6 +714,7 @@ void tokenize(char **buffer, char *line)
     }
 
     buffer[position] = NULL;
+    free(copy);
 }
 
 /* Find the active job with the indicated pgid.  */
@@ -583,7 +892,7 @@ void launch_job(job *j, int foreground)
         prev_proc_outfile = NULL;
         if (p->outfile)
             prev_proc_outfile = p->outfile;
-        
+
         /* Set up pipes, if necessary.  */
         if (p->next)
         {
