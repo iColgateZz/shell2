@@ -102,12 +102,11 @@ int *categorize_tokens(char **tokens)
             arr[pos++] = PIPE;
             first = 1;
             break;
-        case '\\':
-            arr[pos++] = LINE_CONTINUATION;
-            break;
         case '"':
             arr[pos++] = QUOTE;
-            while (tokens[i] && !endsWith(tokens[i], '"'))
+            if (strcmp(tokens[i], "\"") == 0)
+                i++;
+            while (tokens[i] != NULL && !endsWith(tokens[i], '"'))
             {
                 i++;
             }
@@ -126,6 +125,8 @@ int *categorize_tokens(char **tokens)
                 arr[pos++] = OPER;
                 first = 1;
             }
+            else if (endsWith(tokens[i], '\\'))
+                arr[pos++] = LINE_CONTINUATION;
             else if (first)
             {
                 arr[pos++] = CMD;
@@ -756,6 +757,11 @@ int job_is_completed(job *j)
    before proceeding. */
 void init_shell()
 {
+    /* Check for non-interactive mode. Used for tests. */
+    if (getenv("PSH_NON_INTERACTIVE")) {
+        shell_is_interactive = 0;
+        return;
+    }
 
     /* See if we are running interactively.  */
     shell_terminal = STDIN_FILENO;
@@ -1093,7 +1099,7 @@ void wait_for_job(job *j)
 /* Format information about job status for the user to look at.  */
 void format_job_info(job *j, const char *status)
 {
-    fprintf(stderr, "%ld (%s): %s\n", (long)j->pgid, status, j->command);
+    // fprintf(stderr, "%ld (%s): %s\n", (long)j->pgid, status, j->command);
 }
 
 /* Notify the user about stopped or terminated jobs.
