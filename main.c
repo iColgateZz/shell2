@@ -127,6 +127,11 @@ int *categorize_tokens(char **tokens)
             }
             else if (endsWith(tokens[i], '\\'))
                 arr[pos++] = LINE_CONTINUATION;
+            else if (strcmp(tokens[i], "&") == 0)
+            {
+                arr[pos++] = BG_OPER;
+                first = 1;
+            }
             else if (first)
             {
                 arr[pos++] = CMD;
@@ -206,7 +211,7 @@ int check_tokens(char **tokens)
                     next_token == PIPE ||
                     next_token == END ||
                     next_token == OPER ||
-                    next_token == END)
+                    next_token == BG_OPER)
                 {
                     last_token = ARG;
                     break;
@@ -361,6 +366,33 @@ int check_tokens(char **tokens)
                 perror("Weird error 6!");
                 return -1;
             }
+
+        case BG_OPER:
+            if (last_token == CMD ||
+                last_token == ARG ||
+                last_token == QUOTE_END)
+            {
+                if (next_token == CMD ||
+                    next_token == INVERSION ||
+                    next_token == END)
+                {
+                    first = 1;
+                    last_token = BG_OPER;
+                    break;
+                }
+                else if (next_token == LINE_CONTINUATION)
+                    return 1;
+                else
+                {
+                    perror("Wrong after BG_OPER!");
+                    return -1;
+                }
+            }
+            else
+            {
+                perror("Weird error 7!");
+                return -1;
+            }
         }
     }
     return 0;
@@ -412,26 +444,28 @@ int launch_jobs(wrapper **list)
             else
             {
                 inverted = list[i]->j->inverted;
-                launch_job(list[i]->j, 1);
+                launch_job(list[i]->j, list[i]->j->foreground);
                 if (inverted)
                     last_proc_exit_status = !last_proc_exit_status;
             }
         }
-        else if (list[i - 1]->type == OPERATOR && list[i]->type == FG_JOB)
+        else if (list[i - 1]->type == OPERATOR && list[i]->type == JOB)
         {
             if (strcmp(list[i - 1]->oper, ";") == 0)
             {
                 inverted = list[i]->j->inverted;
-                launch_job(list[i]->j, 1);
+                launch_job(list[i]->j, list[i]->j->foreground);
                 if (inverted)
                     last_proc_exit_status = !last_proc_exit_status;
             }
+            else if (strcmp(list[i - 1]->oper, "&") == 0)
+                launch_job(list[i]->j, list[i]->j->foreground);
             else if (strcmp(list[i - 1]->oper, "&&") == 0)
             {
                 if (last_proc_exit_status == EXIT_SUCCESS)
                 {
                     inverted = list[i]->j->inverted;
-                    launch_job(list[i]->j, 1);
+                    launch_job(list[i]->j, list[i]->j->foreground);
                     if (inverted)
                         last_proc_exit_status = !last_proc_exit_status;
                 }
@@ -445,7 +479,7 @@ int launch_jobs(wrapper **list)
                 if (last_proc_exit_status != EXIT_SUCCESS)
                 {
                     inverted = list[i]->j->inverted;
-                    launch_job(list[i]->j, 1);
+                    launch_job(list[i]->j, list[i]->j->foreground);
                     if (inverted)
                         last_proc_exit_status = !last_proc_exit_status;
                 }
@@ -467,8 +501,10 @@ wrapper *create_job_wrapper(char **tokens, int start, int end)
         fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
     }
-    wr->type = FG_JOB;
+    wr->type = JOB;
     wr->j = create_job(tokens, start, end);
+    if (wr->j == NULL)
+        return NULL;
 
     return wr;
 }
@@ -531,18 +567,30 @@ wrapper **create_jobs(char **tokens)
             list[position++] = wr2;
             start = end;
         }
+        else if (strcmp(tokens[end], "&") == 0)
+        {
+            end++;
+            wrapper *wr = create_job_wrapper(tokens, start, end);
+            list[position++] = wr;
+
+            wrapper *wr2 = create_oper_wrapper("&");
+            list[position++] = wr2;
+            start = end;
+        }
         end++;
     }
     wrapper *wr = create_job_wrapper(tokens, start, end);
-    list[position++] = wr;
+    if (wr != NULL)
+        list[position++] = wr;
 
     list[position] = NULL;
-
     return list;
 }
 
 job *create_job(char **tokens, int start, int end)
 {
+    if (tokens[start] == NULL)
+        return NULL;
     int last_pipe_index = start;
     // Create a new job
     job *j = malloc(sizeof(job));
@@ -552,14 +600,10 @@ job *create_job(char **tokens, int start, int end)
         exit(EXIT_FAILURE);
     }
     j->stdin = STDIN_FILENO;
-    // int fd = open("lol.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
     j->stdout = STDOUT_FILENO;
     j->stderr = STDERR_FILENO;
-    j->pgid = 0;
-    j->notified = 0;
-    j->first_process = NULL;
-    j->next = NULL;
-    j->inverted = 0;
+    j->pgid = 0, j->notified = 0, j->inverted = 0;
+    j->first_process = NULL, j->next = NULL;
     if (first_job == NULL)
         first_job = j;
     else
@@ -589,8 +633,7 @@ job *create_job(char **tokens, int start, int end)
                 fprintf(stderr, "psh: allocation error\n");
                 exit(EXIT_FAILURE);
             }
-            p->completed = 0;
-            p->stopped = 0;
+            p->completed = 0, p->stopped = 0;
             p->next = NULL;
             p->argv = malloc(TOK_BUF_SIZE * sizeof(char *));
             if (!p->argv)
@@ -598,9 +641,7 @@ job *create_job(char **tokens, int start, int end)
                 fprintf(stderr, "psh: allocation error\n");
                 exit(EXIT_FAILURE);
             }
-            p->infile = NULL;
-            p->outfile = NULL;
-            p->errfile = NULL;
+            p->infile = NULL, p->outfile = NULL, p->errfile = NULL;
 
             int position = 0;
             for (int j = last_pipe_index; j <= i; j++)
@@ -625,7 +666,7 @@ job *create_job(char **tokens, int start, int end)
                             strcat(str_in_quotes, " ");
                             j++;
                         }
-                        if (tokens[j]) // this might be the break point to continue line reading if no " at the end.
+                        if (tokens[j])
                         {
                             tokens[j][strlen(tokens[j]) - 1] = ' ';
                             tokens[j] = trim(tokens[j]);
@@ -655,8 +696,25 @@ job *create_job(char **tokens, int start, int end)
                         p->argv[position++] = strdup(tokens[j]);
                 }
             }
-            p->argv[position] = NULL;
             last_pipe_index = i + 1;
+
+            p->argv[position] = NULL;
+            if (endsWith(p->argv[position - 1], '&'))
+            {
+                j->foreground = 0;
+                j->in_bg = 1;
+                size_t len = strlen(p->argv[position - 1]);
+                if (len == 1)
+                    p->argv[position - 1] = NULL;
+                else
+                {
+                    p->argv[position - 1][len - 1] = ' ';
+                    p->argv[position - 1] = trim(p->argv[position - 1]);
+                }
+            }
+            else
+                j->foreground = 1;
+            
             if (j->first_process == NULL)
                 j->first_process = p;
             else
@@ -758,7 +816,8 @@ int job_is_completed(job *j)
 void init_shell()
 {
     /* Check for non-interactive mode. Used for tests. */
-    if (getenv("PSH_NON_INTERACTIVE")) {
+    if (getenv("PSH_NON_INTERACTIVE"))
+    {
         shell_is_interactive = 0;
         return;
     }
@@ -987,6 +1046,7 @@ int execute(job *j, int foreground)
    SIGCONT signal to wake it up before we block.  */
 void put_job_in_foreground(job *j, int cont)
 {
+    j->in_bg = 0;
     /* Put the job into the foreground.  */
     tcsetpgrp(shell_terminal, j->pgid);
 
@@ -1163,15 +1223,15 @@ void mark_job_as_running(job *j)
 }
 
 /* Continue the job J.  */
-void continue_job(job *j, int foreground)
+void continue_job(job *j, int foreground, int send_cont)
 {
     if (j == NULL)
         return;
     mark_job_as_running(j);
     if (foreground)
-        put_job_in_foreground(j, 1);
+        put_job_in_foreground(j, send_cont);
     else
-        put_job_in_background(j, 1);
+        put_job_in_background(j, send_cont);
 }
 
 /* Free the job J. */

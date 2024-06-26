@@ -48,7 +48,7 @@ int psh_exit(char **args)
                 perror("kill (SIGHUP)");
         j2 = j2->next;
     }
-    
+
     return 0;
 }
 
@@ -97,9 +97,9 @@ int psh_jobs(char **args)
                 stopped_or_running = "stopped";
             else
                 stopped_or_running = "running";
-            if (last_stopped && j->pgid == last_stopped->pgid)
+            if (last_stopped != NULL && j->pgid == last_stopped->pgid)
                 plus_or_minus = "+";
-            else if (last_stopped)
+            else if (last_stopped != NULL)
                 plus_or_minus = "-";
             printf("[%d] %s %s %d %s\n", counter++, plus_or_minus, stopped_or_running, j->pgid, j->command);
         }
@@ -149,10 +149,11 @@ job *_find_job_by_index(int index)
         {
             if (counter == index)
             {
-                if (job_is_stopped(temp))
-                    return temp;
-                else
-                    return NULL;
+                // if (job_is_stopped(temp))
+                //     return temp;
+                // else
+                //     return NULL;
+                return temp;
             }
             counter++;
         }
@@ -164,7 +165,8 @@ int psh_fg(char **args)
 {
     if (args[1] == NULL)
     {
-        continue_job(_find_last_stopped_or_bg_job(), 1);
+        job *j = _find_last_stopped_or_bg_job();
+        continue_job(j, 1, job_is_stopped(j));
         return 1;
     }
     int num;
@@ -175,9 +177,15 @@ int psh_fg(char **args)
             continue;
 
         if (args[i][0] == '%')
-            continue_job(_find_job_by_index(num), 1); // index
+        {
+            job *j = _find_job_by_index(num);
+            continue_job(j, 1, job_is_stopped(j)); // index
+        }
         else
-            continue_job(find_job(num), 1); // pid
+        {
+            job *j = find_job(num);
+            continue_job(j, 1, job_is_stopped(j)); // pid
+        }
     }
     return 1;
 }
@@ -186,7 +194,8 @@ int psh_bg(char **args)
 {
     if (args[1] == NULL)
     {
-        continue_job(_find_last_stopped_job(), 0);
+        job *j = _find_last_stopped_or_bg_job();
+        continue_job(j, 0, job_is_stopped(j));
         return 1;
     }
     int num;
@@ -197,9 +206,15 @@ int psh_bg(char **args)
             continue;
 
         if (args[i][0] == '%')
-            continue_job(_find_job_by_index(num), 0); // index
+        {
+            job *j = _find_job_by_index(num);
+            continue_job(j, 0, job_is_stopped(j)); // index
+        }
         else
-            continue_job(find_job(num), 0); // pid
+        {
+            job *j = find_job(num);
+            continue_job(j, 0, job_is_stopped(j)); // pid
+        }
     }
     return 1;
 }

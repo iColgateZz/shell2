@@ -44,7 +44,7 @@ set commands {
     "whoami"
     "uname -a"
     "echo haha    &&    echo   lol   "
-    "echo \?"
+    "echo \"?\""
     "echo \"Hello, World!\""
     "true && ! false && echo nice"
     "true && false || echo nice"

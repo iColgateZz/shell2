@@ -34,12 +34,12 @@ typedef struct job
     int stdin, stdout, stderr; /* standard i/o channels */
     int inverted;              /* inversion of the exit status */
     int in_bg;                 /* true if job is running in background. */
+    int foreground;            /* true if job should be started as a foreground one. */
 } job;
 
 typedef enum
 {
-    FG_JOB,
-    BG_JOB,
+    JOB,
     OPERATOR
 } Type;
 
@@ -54,6 +54,7 @@ typedef enum Token_Type
     INVERSION,
     QUOTE,
     QUOTE_END,
+    BG_OPER,
     END
 } Token_Type;
 
@@ -81,7 +82,7 @@ int job_is_completed(job *j);
 int mark_process_status(pid_t pid, int status);
 void update_status();
 void mark_job_as_running(job *j);
-void continue_job(job *j, int foreground);
+void continue_job(job *j, int foreground, int send_cont);
 job *find_job(pid_t pgid);
 wrapper **create_jobs(char **tokens);
 int launch_jobs(wrapper **list);
