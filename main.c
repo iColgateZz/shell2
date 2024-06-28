@@ -69,6 +69,7 @@ int main(void)
         tokenize(tokens, line);
         if ((check_status = check_tokens(tokens)) == 0)
         {
+            expand(tokens);
             list = create_jobs(tokens);
             if (list == NULL)
                 continue;
@@ -801,6 +802,8 @@ job *find_job(pid_t pgid)
 /* Return true if all processes in the job have stopped or completed.  */
 int job_is_stopped(job *j)
 {
+    if (!j)
+        return -1;
     process *p;
     for (p = j->first_process; p; p = p->next)
         if (!p->completed && !p->stopped)
@@ -813,6 +816,8 @@ int job_is_stopped(job *j)
 /* Return true if all processes in the job have completed.  */
 int job_is_completed(job *j)
 {
+    if (!j)
+        return -1;
     process *p;
     for (p = j->first_process; p; p = p->next)
         if (!p->completed)
@@ -1237,6 +1242,8 @@ void mark_job_as_running(job *j)
 void continue_job(job *j, int foreground, int send_cont)
 {
     if (j == NULL)
+        return;
+    if (send_cont == -1)
         return;
     mark_job_as_running(j);
     if (foreground)

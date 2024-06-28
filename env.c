@@ -3,11 +3,16 @@
 #include <stdlib.h>
 #include "env.h"
 #include "helpers.h"
+#include "main.h"
+#include "builtin.h"
 
 #define LINE_LEN 256
 #define MAX_PROMPT_LEN 64
 
 extern Env *first_env;
+extern int last_proc_exit_status;
+extern pid_t shell_pgid;
+
 
 /* Get the value of the environmental variable corresponding to the given name.
    Return null pointer if there is no variable with such name. */
@@ -276,4 +281,48 @@ char *configure_prompt(char *env)
     char *var = strdup(temp);
 
     return _parse_ps_var(var);
+}
+
+void remove_first_char(char *str) {
+    if (str == NULL || strlen(str) == 0) {
+        return; // If the string is NULL or empty, do nothing
+    }
+
+    // Shift all characters one position to the left
+    for (int i = 1; i <= strlen(str); i++) {
+        str[i - 1] = str[i];
+    }
+}
+
+#include <stdio.h>
+
+void expand(char **tokens)
+{
+    for (int i = 0; tokens[i] != NULL; i++)
+    {
+        if (tokens[i][0] == '$' && strlen(tokens[i]) > 1)
+        {
+            remove_first_char(tokens[i]);
+
+            if (strcmp(tokens[i], "?") == 0)
+                sprintf(tokens[i], "%d", last_proc_exit_status);
+            else if (strcmp(tokens[i], "$") == 0)
+                sprintf(tokens[i], "%d", shell_pgid);
+            else if (strcmp(tokens[i], "!") == 0)
+            {
+                pid_t pgid;
+                job *j = _find_last_bg_job();
+                if (!j)
+                    pgid = 0;
+                else
+                    pgid = j->pgid;
+                
+                sprintf(tokens[i], "%d", pgid);
+            }
+            else
+            {
+                tokens[i] = psh_getenv(tokens[i]);
+            }
+        }
+    }
 }

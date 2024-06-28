@@ -10,3 +10,4 @@ void psh_setenv(char *name, char *value);
 void psh_unsetenv(char *name);
 void read_config_file();
 char *configure_prompt(char *env);
+void expand(char **tokens);

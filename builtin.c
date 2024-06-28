@@ -52,6 +52,21 @@ int psh_exit(char **args)
     return 0;
 }
 
+/* Find the last job that started running in the background. */
+job *_find_last_bg_job()
+{
+    job *j = first_job;
+    job *last_stopped_or_bg = NULL;
+
+    while (j)
+    {
+        if (j->in_bg)
+            last_stopped_or_bg = j;
+        j = j->next;
+    }
+    return last_stopped_or_bg;
+}
+
 /* Find the last job that was stopped or started running in the background. */
 job *_find_last_stopped_or_bg_job()
 {
