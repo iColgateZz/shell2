@@ -10,6 +10,7 @@
 #include "builtin.h"
 #include "helpers.h"
 #include "main.h"
+#include "env.h"
 
 #define BUF_SIZE 1024
 #define TOK_BUF_SIZE 64
@@ -20,6 +21,7 @@ int shell_terminal;
 int shell_is_interactive;
 job *first_job = NULL;
 int last_proc_exit_status, inverted;
+Env *first_env = NULL;
 
 int main(void)
 {
@@ -32,6 +34,8 @@ int main(void)
 
     /* Make sure the shell is a foreground process. */
     init_shell();
+    /* Read data from a configuration file. */
+    read_config_file();
 
     if (!line)
     {
@@ -44,13 +48,20 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
+    char *prompt1;
+    char *prompt2;
+    
     do
     {
+        /* Updating the prompts for dir and branch changes. */
+        prompt1 = configure_prompt("PS1");
+        prompt2 = configure_prompt("PS2");
+
         /* Regular shell cycle. */
         if (prompt_type == 0)
-            printf("$ ");
+            printf("%s", prompt1);
         else
-            printf("> ");
+            printf("%s", prompt2);
         read_line(line);
         line = trim(line);
         if (line[0] == '\0')
