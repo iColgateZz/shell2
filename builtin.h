@@ -1,3 +1,5 @@
+#include "data_structs.h"
+
 #ifndef BUILT_INS_H
 #define BUILT_INS_H
 
@@ -10,5 +12,6 @@ int psh_num_builtins();
 int psh_cd(char **args);
 int psh_help(char **args);
 int psh_exit(char **args);
+job *_find_last_bg_job();
 
 #endif

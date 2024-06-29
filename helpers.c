@@ -82,3 +82,22 @@ char *concat_line(char **tokens, int start, int end)
     }
     return str;
 }
+
+int containsChar(char *word, char c)
+{
+    for (int i = 0; word[i] != '\0'; i++)
+    {
+        if (word[i] == c)
+            return 1;
+    }
+    return 0;
+}
+
+int count_elem_in_list(char **list)
+{
+    int counter = 0;
+    while (list[counter] != NULL)
+        counter++;
+    
+    return counter;
+}

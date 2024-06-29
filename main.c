@@ -11,6 +11,7 @@
 #include "helpers.h"
 #include "main.h"
 #include "env.h"
+#include <ctype.h>
 
 #define BUF_SIZE 1024
 #define TOK_BUF_SIZE 64
@@ -50,7 +51,7 @@ int main(void)
 
     char *prompt1;
     char *prompt2;
-    
+
     do
     {
         /* Updating the prompts for dir and branch changes. */
@@ -69,6 +70,7 @@ int main(void)
         tokenize(tokens, line);
         if ((check_status = check_tokens(tokens)) == 0)
         {
+            expand(tokens);
             list = create_jobs(tokens);
             if (list == NULL)
                 continue;
@@ -662,28 +664,10 @@ job *create_job(char **tokens, int start, int end)
                     // for quoting
                     if (tokens[j][0] == '"')
                     {
-                        char *str_in_quotes = malloc(TOK_BUF_SIZE * sizeof(char));
-                        if (!str_in_quotes)
-                        {
-                            fprintf(stderr, "psh: allocation error\n");
-                            exit(EXIT_FAILURE);
-                        }
-
-                        tokens[j][0] = ' ';
-                        tokens[j] = trim(tokens[j]);
-                        while (tokens[j] && j <= i && !endsWith(tokens[j], '"'))
-                        {
-                            strcat(str_in_quotes, tokens[j]);
-                            strcat(str_in_quotes, " ");
-                            j++;
-                        }
-                        if (tokens[j])
-                        {
-                            tokens[j][strlen(tokens[j]) - 1] = ' ';
-                            tokens[j] = trim(tokens[j]);
-                            strcat(str_in_quotes, tokens[j]);
-                        }
-                        p->argv[position++] = strdup(str_in_quotes);
+                        size_t len = strlen(tokens[j]);
+                        memmove(tokens[j], tokens[j] + 1, len - 1);
+                        tokens[j][len - 2] = '\0';
+                        p->argv[position++] = strdup(tokens[j]);
                     }
                     else if (isRedirection(tokens[j]))
                     {
@@ -725,7 +709,7 @@ job *create_job(char **tokens, int start, int end)
             }
             else
                 j->foreground = 1;
-            
+
             if (j->first_process == NULL)
                 j->first_process = p;
             else
@@ -773,18 +757,37 @@ void read_line(char *buffer)
 void tokenize(char **buffer, char *line)
 {
     int position = 0;
-    char *copy = malloc(BUF_SIZE * sizeof(char));
-    strcpy(copy, line);
-    char *token = strtok(copy, " ");
+    int start = 0;
+    int in_quotes = 0;
+    int len = strlen(line);
+    char *token;
 
-    while (token != NULL)
+    for (int i = 0; i <= len; i++)
     {
-        buffer[position++] = strdup(token);
-        token = strtok(NULL, " ");
+        if (line[i] == '"')
+        {
+            in_quotes = !in_quotes;
+        }
+        else if (isspace(line[i]) && !in_quotes)
+        {
+            if (i > start)
+            {
+                token = strndup(line + start, i - start);
+                buffer[position++] = token;
+            }
+            start = i + 1;
+        }
+        else if (line[i] == '\0')
+        {
+            if (i > start)
+            {
+                token = strndup(line + start, i - start);
+                buffer[position++] = token;
+            }
+        }
     }
 
     buffer[position] = NULL;
-    free(copy);
 }
 
 /* Find the active job with the indicated pgid.  */
@@ -801,6 +804,8 @@ job *find_job(pid_t pgid)
 /* Return true if all processes in the job have stopped or completed.  */
 int job_is_stopped(job *j)
 {
+    if (!j)
+        return -1;
     process *p;
     for (p = j->first_process; p; p = p->next)
         if (!p->completed && !p->stopped)
@@ -813,6 +818,8 @@ int job_is_stopped(job *j)
 /* Return true if all processes in the job have completed.  */
 int job_is_completed(job *j)
 {
+    if (!j)
+        return -1;
     process *p;
     for (p = j->first_process; p; p = p->next)
         if (!p->completed)
@@ -1237,6 +1244,8 @@ void mark_job_as_running(job *j)
 void continue_job(job *j, int foreground, int send_cont)
 {
     if (j == NULL)
+        return;
+    if (send_cont == -1)
         return;
     mark_job_as_running(j);
     if (foreground)

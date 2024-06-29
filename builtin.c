@@ -5,8 +5,10 @@
 #include "builtin.h"
 #include "main.h"
 #include <ctype.h>
+#include "env.h"
 
 extern job *first_job;
+extern Env *first_env;
 
 int psh_cd(char **args)
 {
@@ -45,11 +47,26 @@ int psh_exit(char **args)
     while (j2)
     {
         if (j2->pgid > 0 && killpg(j2->pgid, SIGHUP) < 0)
-                perror("kill (SIGHUP)");
+            perror("kill (SIGHUP)");
         j2 = j2->next;
     }
 
     return 0;
+}
+
+/* Find the last job that started running in the background. */
+job *_find_last_bg_job()
+{
+    job *j = first_job;
+    job *last_stopped_or_bg = NULL;
+
+    while (j)
+    {
+        if (j->in_bg)
+            last_stopped_or_bg = j;
+        j = j->next;
+    }
+    return last_stopped_or_bg;
 }
 
 /* Find the last job that was stopped or started running in the background. */
@@ -219,6 +236,57 @@ int psh_bg(char **args)
     return 1;
 }
 
+int psh_source(char **argv)
+{
+    free_env_list();
+    read_config_file();
+    return 1;
+}
+
+int psh_set(char **argv)
+{
+    int elem_count = count_elem_in_list(argv);
+    if (elem_count < 2)
+    {
+        fprintf(stderr, "Not enough arguments\n");
+        return 1;
+    }
+    char **arr;
+    for (int i = 1; argv[i] != NULL; i++)
+    {
+        if (containsChar(argv[i], '='))
+        {
+            arr = _split_string(argv[i], "=");
+            if (!arr)
+            {
+                fprintf(stderr, "Argument must be of type NAME=VALUE, but was %s\n", argv[i]);
+                break;
+            }
+            psh_setenv(arr[0], arr[1]);
+        }
+        else
+        {
+            fprintf(stderr, "Argument must be of type NAME=VALUE, but was %s\n", argv[i]);
+            break;
+        }
+    }
+
+    return 1;
+}
+
+int psh_unset(char **argv)
+{
+    int elem_count = count_elem_in_list(argv);
+    if (elem_count < 2)
+    {
+        fprintf(stderr, "Not enough arguments\n");
+        return 1;
+    }
+    for (int i = 1; argv[i] != NULL; i++)
+        psh_unsetenv(argv[i]);
+    return 1;
+}
+
 // Array of built-in command function pointers
 builtin_func func_arr[] = {
     &psh_cd,
@@ -226,8 +294,10 @@ builtin_func func_arr[] = {
     &psh_exit,
     &psh_jobs,
     &psh_fg,
-    &psh_bg    
-};
+    &psh_bg,
+    &psh_source,
+    &psh_set,
+    &psh_unset};
 
 // Array of built-in command strings
 char *builtin_str[] = {
@@ -236,8 +306,10 @@ char *builtin_str[] = {
     "exit",
     "jobs",
     "fg",
-    "bg"
-};
+    "bg",
+    "source",
+    "set",
+    "unset"};
 
 int psh_num_builtins()
 {

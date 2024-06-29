@@ -3,11 +3,15 @@
 #include <stdlib.h>
 #include "env.h"
 #include "helpers.h"
+#include "main.h"
+#include "builtin.h"
 
 #define LINE_LEN 256
 #define MAX_PROMPT_LEN 64
 
 extern Env *first_env;
+extern int last_proc_exit_status;
+extern pid_t shell_pgid;
 
 /* Get the value of the environmental variable corresponding to the given name.
    Return null pointer if there is no variable with such name. */
@@ -16,7 +20,7 @@ char *psh_getenv(char *name)
     char *value = NULL;
     Env *temp = first_env;
     if (!temp)
-        return NULL;
+        return getenv(name);
     do
     {
         if (strcmp(temp->name, name) == 0)
@@ -80,7 +84,9 @@ void psh_setenv(char *name, char *value)
 void psh_unsetenv(char *name)
 {
     Env *temp = first_env;
-    Env *prev, *next;
+    if (!temp)
+        return;
+    Env *prev = NULL, *next;
     int found = 0;
     do
     {
@@ -93,22 +99,28 @@ void psh_unsetenv(char *name)
         prev = temp;
         temp = temp->next;
     } while (temp);
-
     if (!found)
         return;
-    prev->next = next;
-
+    if (!prev)
+        first_env = next;
+    else
+        prev->next = next;
     free(temp->name);
     free(temp->value);
-    free(temp->next);
     free(temp);
 }
 
 char **_split_string(char *str, char *c)
 {
     char *arr[2];
-    arr[0] = trim(strtok(str, c));
-    arr[1] = trim(strtok(NULL, c));
+    char *token = strtok(str, c);
+    if (!token)
+        return NULL;
+    arr[0] = trim(token);
+    token = strtok(NULL, c);
+    if (!token)
+        return NULL;
+    arr[1] = trim(token);
 
     if (arr[1][0] == '"' && arr[1][strlen(arr[1]) - 1] == '"')
     {
@@ -201,7 +213,7 @@ char *_get_current_git_branch()
     }
     else
         path[0] = '\0';
-    
+
     pclose(fp);
 
     char *result = strdup(path);
@@ -276,4 +288,85 @@ char *configure_prompt(char *env)
     char *var = strdup(temp);
 
     return _parse_ps_var(var);
+}
+
+void remove_first_char(char *str)
+{
+    if (str == NULL || strlen(str) == 0)
+    {
+        return; // If the string is NULL or empty, do nothing
+    }
+
+    // Shift all characters one position to the left
+    for (int i = 1; i <= strlen(str); i++)
+    {
+        str[i - 1] = str[i];
+    }
+}
+
+char *handle_$(char *token)
+{
+    remove_first_char(token);
+
+    if (strcmp(token, "?") == 0)
+        sprintf(token, "%d", last_proc_exit_status);
+    else if (strcmp(token, "$") == 0)
+        sprintf(token, "%d", shell_pgid);
+    else if (strcmp(token, "!") == 0)
+    {
+        pid_t pgid;
+        job *j = _find_last_bg_job();
+        if (!j)
+            pgid = 0;
+        else
+            pgid = j->pgid;
+
+        sprintf(token, "%d", pgid);
+    }
+    else
+    {
+        char *temp = psh_getenv(token);
+        if (!temp)
+            token = '\0';
+        else
+            token = strdup(temp);
+    }
+    return token;
+}
+
+char *handle_wave(char *token)
+{
+    char *home = strdup(getenv("HOME"));
+    remove_first_char(token);
+    strcat(home, token);
+    return home;
+}
+
+void expand(char **tokens)
+{
+    for (int i = 0; tokens[i] != NULL; i++)
+    {
+        if (tokens[i][0] == '$' && strlen(tokens[i]) > 1)
+            tokens[i] = handle_$(tokens[i]);
+        else if (tokens[i][0] == '~')
+            tokens[i] = handle_wave(tokens[i]);
+    }
+}
+
+void free_env_list()
+{
+    Env *temp = first_env;
+    Env *next;
+    if (!temp)
+        return;
+    
+    do
+    {
+        next = temp->next;
+        free(temp->name);
+        free(temp->value);
+        free(temp);
+        temp = next;
+    } while (temp);
+    first_env = NULL;
 }

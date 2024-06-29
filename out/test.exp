@@ -66,6 +66,11 @@ set commands {
     "wc -l < out/lol.txt && echo hello world"
     "! wc -l < out/lol.txt || echo hello world"
     "wc -l < out/lol.txt || echo hello world"
+    "echo $HOME"
+    "echo $USER $HOME"
+    "echo $? lol haha"
+    "echo $? lol haha | wc -l"
+    "mkdir ~/.lol    &&    ls    ~/.lol   |    wc -l    && rm -r ~/.lol;   echo done  "
     "find . -type f -iname \"*.c\" -print0 | xargs -0 cat | wc -l"
 }
 
