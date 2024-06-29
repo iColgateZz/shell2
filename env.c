@@ -84,7 +84,9 @@ void psh_setenv(char *name, char *value)
 void psh_unsetenv(char *name)
 {
     Env *temp = first_env;
-    Env *prev, *next;
+    if (!temp)
+        return;
+    Env *prev = NULL, *next;
     int found = 0;
     do
     {
@@ -97,22 +99,28 @@ void psh_unsetenv(char *name)
         prev = temp;
         temp = temp->next;
     } while (temp);
-
     if (!found)
         return;
-    prev->next = next;
-
+    if (!prev)
+        first_env = next;
+    else
+        prev->next = next;
     free(temp->name);
     free(temp->value);
-    free(temp->next);
     free(temp);
 }
 
 char **_split_string(char *str, char *c)
 {
     char *arr[2];
-    arr[0] = trim(strtok(str, c));
-    arr[1] = trim(strtok(NULL, c));
+    char *token = strtok(str, c);
+    if (!token)
+        return NULL;
+    arr[0] = trim(token);
+    token = strtok(NULL, c);
+    if (!token)
+        return NULL;
+    arr[1] = trim(token);
 
     if (arr[1][0] == '"' && arr[1][strlen(arr[1]) - 1] == '"')
     {
@@ -295,8 +303,6 @@ void remove_first_char(char *str)
         str[i - 1] = str[i];
     }
 }
-
-#include <stdio.h>
 
 char *handle_$(char *token)
 {

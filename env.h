@@ -12,3 +12,4 @@ void read_config_file();
 char *configure_prompt(char *env);
 void expand(char **tokens);
 void free_env_list();
+char **_split_string(char *str, char *c);
