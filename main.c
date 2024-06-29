@@ -11,6 +11,7 @@
 #include "helpers.h"
 #include "main.h"
 #include "env.h"
+#include <ctype.h>
 
 #define BUF_SIZE 1024
 #define TOK_BUF_SIZE 64
@@ -663,28 +664,10 @@ job *create_job(char **tokens, int start, int end)
                     // for quoting
                     if (tokens[j][0] == '"')
                     {
-                        char *str_in_quotes = malloc(TOK_BUF_SIZE * sizeof(char));
-                        if (!str_in_quotes)
-                        {
-                            fprintf(stderr, "psh: allocation error\n");
-                            exit(EXIT_FAILURE);
-                        }
-
-                        tokens[j][0] = ' ';
-                        tokens[j] = trim(tokens[j]);
-                        while (tokens[j] && j <= i && !endsWith(tokens[j], '"'))
-                        {
-                            strcat(str_in_quotes, tokens[j]);
-                            strcat(str_in_quotes, " ");
-                            j++;
-                        }
-                        if (tokens[j])
-                        {
-                            tokens[j][strlen(tokens[j]) - 1] = ' ';
-                            tokens[j] = trim(tokens[j]);
-                            strcat(str_in_quotes, tokens[j]);
-                        }
-                        p->argv[position++] = strdup(str_in_quotes);
+                        size_t len = strlen(tokens[j]);
+                        memmove(tokens[j], tokens[j] + 1, len - 1);
+                        tokens[j][len - 2] = '\0';
+                        p->argv[position++] = strdup(tokens[j]);
                     }
                     else if (isRedirection(tokens[j]))
                     {
@@ -774,18 +757,37 @@ void read_line(char *buffer)
 void tokenize(char **buffer, char *line)
 {
     int position = 0;
-    char *copy = malloc(BUF_SIZE * sizeof(char));
-    strcpy(copy, line);
-    char *token = strtok(copy, " ");
+    int start = 0;
+    int in_quotes = 0;
+    int len = strlen(line);
+    char *token;
 
-    while (token != NULL)
+    for (int i = 0; i <= len; i++)
     {
-        buffer[position++] = strdup(token);
-        token = strtok(NULL, " ");
+        if (line[i] == '"')
+        {
+            in_quotes = !in_quotes;
+        }
+        else if (isspace(line[i]) && !in_quotes)
+        {
+            if (i > start)
+            {
+                token = strndup(line + start, i - start);
+                buffer[position++] = token;
+            }
+            start = i + 1;
+        }
+        else if (line[i] == '\0')
+        {
+            if (i > start)
+            {
+                token = strndup(line + start, i - start);
+                buffer[position++] = token;
+            }
+        }
     }
 
     buffer[position] = NULL;
-    free(copy);
 }
 
 /* Find the active job with the indicated pgid.  */
