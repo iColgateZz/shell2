@@ -5,8 +5,10 @@
 #include "builtin.h"
 #include "main.h"
 #include <ctype.h>
+#include "env.h"
 
 extern job *first_job;
+extern Env *first_env;
 
 int psh_cd(char **args)
 {
@@ -234,6 +236,12 @@ int psh_bg(char **args)
     return 1;
 }
 
+int psh_source(char **argv)
+{
+    free_env_list();
+    read_config_file();
+}
+
 // Array of built-in command function pointers
 builtin_func func_arr[] = {
     &psh_cd,
@@ -241,7 +249,8 @@ builtin_func func_arr[] = {
     &psh_exit,
     &psh_jobs,
     &psh_fg,
-    &psh_bg    
+    &psh_bg,
+    &psh_source
 };
 
 // Array of built-in command strings
@@ -251,7 +260,8 @@ char *builtin_str[] = {
     "exit",
     "jobs",
     "fg",
-    "bg"
+    "bg",
+    "source"
 };
 
 int psh_num_builtins()

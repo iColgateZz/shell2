@@ -50,7 +50,7 @@ int main(void)
 
     char *prompt1;
     char *prompt2;
-    
+
     do
     {
         /* Updating the prompts for dir and branch changes. */
@@ -726,7 +726,7 @@ job *create_job(char **tokens, int start, int end)
             }
             else
                 j->foreground = 1;
-            
+
             if (j->first_process == NULL)
                 j->first_process = p;
             else
