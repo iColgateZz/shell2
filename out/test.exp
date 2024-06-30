@@ -5,7 +5,7 @@ set env(PSH_NON_INTERACTIVE) 1
 
 # Function to run a command in the real shell and capture the output
 proc run_real_shell {cmd} {
-    set output [exec bash -c $cmd]
+    set output [exec zsh -c $cmd]
     return $output
 }
 
@@ -71,6 +71,19 @@ set commands {
     "echo $? lol haha"
     "echo $? lol haha | wc -l"
     "mkdir ~/.lol    &&    ls    ~/.lol   |    wc -l    && rm -r ~/.lol;   echo done  "
+    "echo {ab,cd}{1..2}{3..1}"
+    "echo $HOME$USER"
+    "echo ~/$USER/{1..5}"
+    "echo {1..5} > out/lol.txt | wc -l"
+    "echo \"Inside the quotes it does $PWD\""
+    "echo \"prefix{a,b,123,c,?}suffix\""
+    "echo \"prefix{a,b,123,c}suffix\""
+    "echo \"prefix{1..5}suffix\""
+    "echo \"prefix{invalid content}suffix\""
+    "echo \"prefix{1..a}suffix\""
+    "echo \"prefix{a,b,c}suffix\""
+    "echo \"prefix{1..10}suffix\""
+    "echo p{3..2}{2..5}{ab}s"
     "find . -type f -iname \"*.c\" -print0 | xargs -0 cat | wc -l"
 }
 
