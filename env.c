@@ -5,6 +5,7 @@
 #include "helpers.h"
 #include "main.h"
 #include "builtin.h"
+#include <ctype.h>
 
 #define LINE_LEN 256
 #define MAX_PROMPT_LEN 64
@@ -304,15 +305,126 @@ void remove_first_char(char *str)
     }
 }
 
-char *handle_$(char *token)
+int _is_dollar_expandable(char *token)
 {
-    remove_first_char(token);
+    int $_index = -1;
+    for (int i = 0; token[i] != '\0'; i++)
+    {
+        if (token[i] == '$')
+        {
+            $_index = i;
+            break;
+        }
+    }
+    if ($_index == -1)
+        return 0;
+    if (token[$_index + 1] == '\0' || token[$_index + 1] == '{')
+        return 0;
+    return 1;
+}
 
-    if (strcmp(token, "?") == 0)
-        sprintf(token, "%d", last_proc_exit_status);
-    else if (strcmp(token, "$") == 0)
-        sprintf(token, "%d", shell_pgid);
-    else if (strcmp(token, "!") == 0)
+char arr[] = {
+    '$',
+    '{',
+    '[',
+    '(',
+    '\\',
+    '/',
+    '*',
+    '?',
+    '&',
+    '|',
+    '!',
+    '~',
+    '<',
+    '>',
+    '%',
+    ':',
+    ';',
+    '"',
+    '\'',
+    '\0'
+};
+
+int is_special_symbol(char c)
+{
+    for (int i = 0; arr[i] != '\0'; i++)
+    {
+        if (arr[i] == c)
+            return 1;
+    }
+    return 0;
+}
+
+void _handle_dollar_expansion(char **tokens, char *token, int index)
+{
+    int prefix_len = 0, content_len = 0, suffix_len = 0;
+    char *prefix = NULL, *content = NULL, *suffix = NULL;
+    int first = 0;
+
+    for (int i = 0; token[i] != '\0'; i++)
+    {
+        if (!first && token[i] == '$')
+        {
+            first = 1;
+            prefix_len = i;
+        }
+        else if (first && is_special_symbol(token[i]))
+        {
+            content_len = i - prefix_len - 1;
+            if (token[i] == '$' && content_len == 0)
+                content_len++;
+            else if (token[i] == '?' && content_len == 0)
+                content_len++;
+            break;
+        }
+        else if (first && token[i + 1] == '\0')
+        {
+            content_len = i - prefix_len;
+            break;
+        }
+    }
+    suffix_len = strlen(token) - prefix_len - content_len - 1;
+
+    prefix = (char *)malloc(prefix_len + 1);
+    content = (char *)malloc(content_len + 1);
+    suffix = (char *)malloc(suffix_len + 1);
+
+    if (!prefix || !content || !suffix) {
+        free(prefix);
+        free(content);
+        free(suffix);
+        return;
+    }
+
+    // printf("Prefix_len %d\n", prefix_len);
+    // printf("Content_len %d\n", content_len);
+    // printf("Suffix_len %d\n", suffix_len);
+
+    strncpy(prefix, token, prefix_len);
+    prefix[prefix_len] = '\0';
+
+    strncpy(content, token + prefix_len + 1, content_len);
+    content[content_len] = '\0';
+
+    strcpy(suffix, token + prefix_len + content_len + 1);
+
+    // printf("Prefix %s\n", prefix);
+    // printf("Content %s\n", content);
+    // printf("Suffix %s\n", suffix);
+
+    char *expanded_content = NULL;
+    if (strcmp(content, "?") == 0)
+    {
+        expanded_content = (char *)malloc(12);
+        sprintf(expanded_content, "%d", last_proc_exit_status);
+    }
+    else if (strcmp(content, "$") == 0)
+    {
+        expanded_content = (char *)malloc(12);
+        sprintf(expanded_content, "%d", shell_pgid);
+    }
+    else if (strcmp(content, "!") == 0)
     {
         pid_t pgid;
         job *j = _find_last_bg_job();
@@ -321,17 +433,45 @@ char *handle_$(char *token)
         else
             pgid = j->pgid;
 
-        sprintf(token, "%d", pgid);
+        expanded_content = (char *)malloc(12);
+        sprintf(expanded_content, "%d", pgid);
     }
     else
     {
-        char *temp = psh_getenv(token);
+        char *temp = psh_getenv(content);
         if (!temp)
-            token = '\0';
+            expanded_content = strdup("");
         else
-            token = strdup(temp);
+            expanded_content = strdup(temp);
     }
-    return token;
+
+    if (!expanded_content) {
+        free(prefix);
+        free(content);
+        free(suffix);
+        return;
+    }
+
+    size_t new_token_len = prefix_len + strlen(expanded_content) + suffix_len;
+    char *new_token = (char *)malloc(new_token_len + 1);
+
+    if (!new_token) {
+        free(prefix);
+        free(content);
+        free(suffix);
+        free(expanded_content);
+        return;
+    }
+    
+    sprintf(new_token, "%s%s%s", prefix, expanded_content, suffix);
+
+    free(prefix);
+    free(content);
+    free(suffix);
+    free(expanded_content);
+
+    free(tokens[index]);
+    tokens[index] = new_token;
 }
 
 char *handle_wave(char *token)
@@ -342,14 +482,153 @@ char *handle_wave(char *token)
     return home;
 }
 
+int _find_curly_brace_expansion(const char *token)
+{
+    int open_i = -1, close_i = -1;
+    for (int i = 0; token[i] != '\0'; i++)
+    {
+        if (token[i] == '{')
+            open_i = i;
+        else if (token[i] == '}')
+        {
+            close_i = i;
+            break;
+        }
+    }
+    if (open_i == -1 || close_i == -1 || open_i >= close_i || (close_i - open_i) <= 1)
+        return 0;
+
+    char *content = strndup(token + open_i + 1, close_i - open_i - 1);
+    if (!content)
+        return 0;
+
+    // printf("content is %s\n", content);
+    int is_comma_separated = 1;
+    if (!strchr(content, ','))
+        is_comma_separated = 0;
+    for (int i = 0; content[i] != '\0'; i++)
+    {
+        if (!isalnum(content[i]) && content[i] != ',')
+        {
+            is_comma_separated = 0;
+            break;
+        }
+    }
+    // printf("is comma sep %d\n", is_comma_separated);
+    int is_number_range = 0;
+    char *dotdot = strstr(content, "..");
+    if (dotdot)
+    {
+        char *first_part = strndup(content, dotdot - content);
+        char *second_part = strdup(dotdot + 2);
+        if (first_part && second_part)
+        {
+            is_number_range = 1;
+            for (int i = 0; first_part[i] != '\0'; i++)
+            {
+                if (!isdigit(first_part[i]))
+                {
+                    is_number_range = 0;
+                    break;
+                }
+            }
+            for (int i = 0; second_part[i] != '\0'; i++)
+            {
+                if (!isdigit(second_part[i]))
+                {
+                    is_number_range = 0;
+                    break;
+                }
+            }
+        }
+        free(first_part);
+        free(second_part);
+    }
+    // printf("is .. sep %d\n", is_number_range);
+    // sleep(2);
+    free(content);
+
+    return is_comma_separated || is_number_range;
+}
+
+void _handle_curly_brace_expansion(char **tokens, char *token, int index)
+{
+    char *start = strchr(token, '{');
+    char *end = strchr(token, '}');
+
+    if (start == NULL || end == NULL || start > end)
+        return;
+
+    char prefix[256] = {0};
+    char suffix[256] = {0};
+    char content[256] = {0};
+
+    strncpy(prefix, token, start - token);
+    strncpy(suffix, end + 1, strlen(end + 1));
+    strncpy(content, start + 1, end - start - 1);
+
+    char **new_tokens = NULL;
+    int new_token_count = 0;
+
+    if (strchr(content, ','))
+    {
+        // Handle comma-separated list
+        char *part = strtok(content, ",");
+        while (part != NULL)
+        {
+            new_tokens = realloc(new_tokens, sizeof(char *) * (new_token_count + 1));
+            new_tokens[new_token_count] = malloc(strlen(prefix) + strlen(part) + strlen(suffix) + 1);
+            sprintf(new_tokens[new_token_count], "%s%s%s", prefix, part, suffix);
+            new_token_count++;
+            part = strtok(NULL, ",");
+        }
+    }
+    else if (strchr(content, '.') && strchr(content, '.') != strrchr(content, '.'))
+    {
+        // Handle numeric range
+        int start_num, end_num;
+        if (sscanf(content, "%d..%d", &start_num, &end_num) == 2)
+        {
+            int k = start_num < end_num ? 1 : -1;
+            for (int i = start_num; (k == 1) ? (i <= end_num) : (i >= end_num); i += k)
+            {
+                new_tokens = realloc(new_tokens, sizeof(char *) * (new_token_count + 1));
+                new_tokens[new_token_count] = malloc(strlen(prefix) + 21 + strlen(suffix)); // 21 for integer
+                sprintf(new_tokens[new_token_count], "%s%d%s", prefix, i, suffix);
+                new_token_count++;
+            }
+        }
+    }
+
+    if (new_tokens != NULL)
+    {
+        int original_count = 0;
+        while (tokens[original_count] != NULL)
+            original_count++;
+
+        tokens = realloc(tokens, sizeof(char *) * (original_count + new_token_count));
+        memmove(&tokens[index + new_token_count], &tokens[index + 1], sizeof(char *) * (original_count - index));
+
+        for (int i = 0; i < new_token_count; i++)
+        {
+            tokens[index + i] = new_tokens[i];
+        }
+
+        free(new_tokens);
+    }
+}
+
 void expand(char **tokens)
 {
     for (int i = 0; tokens[i] != NULL; i++)
     {
-        if (tokens[i][0] == '$' && strlen(tokens[i]) > 1)
-            tokens[i] = handle_$(tokens[i]);
-        else if (tokens[i][0] == '~')
+        if (tokens[i][0] == '~')
             tokens[i] = handle_wave(tokens[i]);
+        while (_is_dollar_expandable(tokens[i]))
+            _handle_dollar_expansion(tokens, tokens[i], i);
+        while (_find_curly_brace_expansion(tokens[i]))
+            _handle_curly_brace_expansion(tokens, tokens[i], i);
+
     }
 }
 
@@ -359,7 +638,7 @@ void free_env_list()
     Env *next;
     if (!temp)
         return;
-    
+
     do
     {
         next = temp->next;

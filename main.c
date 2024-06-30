@@ -967,14 +967,19 @@ void launch_job(job *j, int foreground)
     process *p;
     pid_t pid;
     int mypipe[2], infile, outfile;
-    char *prev_proc_outfile;
+    char *prev_proc_outfile = (char *)malloc(TOK_BUF_SIZE);
+    if (!prev_proc_outfile)
+    {
+        fprintf(stderr, "psh: allocation error\n");
+        exit(EXIT_FAILURE);
+    }
 
     infile = j->stdin;
     for (p = j->first_process; p; p = p->next)
     {
         prev_proc_outfile = NULL;
         if (p->outfile)
-            prev_proc_outfile = p->outfile;
+            prev_proc_outfile = strdup(p->outfile);
 
         /* Set up pipes, if necessary.  */
         if (p->next)
