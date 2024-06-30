@@ -320,6 +320,8 @@ int _is_dollar_expandable(char *token)
         return 0;
     if (token[$_index + 1] == '\0' || token[$_index + 1] == '{')
         return 0;
+
+    // printf("Got out of the dollar_expandable thingy\n");
     return 1;
 }
 
@@ -343,8 +345,7 @@ char arr[] = {
     ';',
     '"',
     '\'',
-    '\0'
-};
+    '\0'};
 
 int is_special_symbol(char c)
 {
@@ -371,10 +372,13 @@ void _handle_dollar_expansion(char **tokens, char *token, int index)
         }
         else if (first && is_special_symbol(token[i]))
         {
+            // printf("Special symbol is %c\n", token[i]);
             content_len = i - prefix_len - 1;
             if (token[i] == '$' && content_len == 0)
                 content_len++;
             else if (token[i] == '?' && content_len == 0)
+                content_len++;
+            else if (token[i] == '!' && content_len == 0)
                 content_len++;
             break;
         }
@@ -388,9 +392,10 @@ void _handle_dollar_expansion(char **tokens, char *token, int index)
 
     prefix = (char *)malloc(prefix_len + 1);
     content = (char *)malloc(content_len + 1);
-    suffix = (char *)malloc(suffix_len + 1);
+    suffix = (char *)malloc(2 * suffix_len + 1); // It sometimes behaved weirdly causing a trace error
 
-    if (!prefix || !content || !suffix) {
+    if (!prefix || !content || !suffix)
+    {
         free(prefix);
         free(content);
         free(suffix);
@@ -401,13 +406,9 @@ void _handle_dollar_expansion(char **tokens, char *token, int index)
     // printf("Content_len %d\n", content_len);
     // printf("Suffix_len %d\n", suffix_len);
 
-    strncpy(prefix, token, prefix_len);
-    prefix[prefix_len] = '\0';
-
-    strncpy(content, token + prefix_len + 1, content_len);
-    content[content_len] = '\0';
-
-    strcpy(suffix, token + prefix_len + content_len + 1);
+    strlcpy(prefix, token, prefix_len + 1);
+    strlcpy(content, token + prefix_len + 1, content_len + 1);
+    strlcpy(suffix, token + prefix_len + content_len + 1, suffix_len + 1);
 
     // printf("Prefix %s\n", prefix);
     // printf("Content %s\n", content);
@@ -445,7 +446,8 @@ void _handle_dollar_expansion(char **tokens, char *token, int index)
             expanded_content = strdup(temp);
     }
 
-    if (!expanded_content) {
+    if (!expanded_content)
+    {
         free(prefix);
         free(content);
         free(suffix);
@@ -455,14 +457,15 @@ void _handle_dollar_expansion(char **tokens, char *token, int index)
     size_t new_token_len = prefix_len + strlen(expanded_content) + suffix_len;
     char *new_token = (char *)malloc(new_token_len + 1);
 
-    if (!new_token) {
+    if (!new_token)
+    {
         free(prefix);
         free(content);
         free(suffix);
         free(expanded_content);
         return;
     }
-    
+
     sprintf(new_token, "%s%s%s", prefix, expanded_content, suffix);
 
     free(prefix);
@@ -472,14 +475,17 @@ void _handle_dollar_expansion(char **tokens, char *token, int index)
 
     free(tokens[index]);
     tokens[index] = new_token;
+    // printf("END of handle_dollar\n");
 }
 
-char *handle_wave(char *token)
+void handle_wave(char **tokens, char *token, int index)
 {
     char *home = strdup(getenv("HOME"));
     remove_first_char(token);
     strcat(home, token);
-    return home;
+    free(tokens[index]);
+    tokens[index] = home;
+    // printf("New var is %s\n", tokens[index]);
 }
 
 int _find_curly_brace_expansion(const char *token)
@@ -567,6 +573,10 @@ void _handle_curly_brace_expansion(char **tokens, char *token, int index)
     strncpy(suffix, end + 1, strlen(end + 1));
     strncpy(content, start + 1, end - start - 1);
 
+    // printf("Prefix is %s\n", prefix);
+    // printf("Conten is %s\n", content);
+    // printf("Suffix is %s\n", suffix);
+
     char **new_tokens = NULL;
     int new_token_count = 0;
 
@@ -623,12 +633,12 @@ void expand(char **tokens)
     for (int i = 0; tokens[i] != NULL; i++)
     {
         if (tokens[i][0] == '~')
-            tokens[i] = handle_wave(tokens[i]);
+            handle_wave(tokens, tokens[i], i);
         while (_is_dollar_expandable(tokens[i]))
             _handle_dollar_expansion(tokens, tokens[i], i);
         while (_find_curly_brace_expansion(tokens[i]))
             _handle_curly_brace_expansion(tokens, tokens[i], i);
-
+        // printf("LOOP...\n");
     }
 }
 
