@@ -84,6 +84,14 @@ set commands {
     "echo \"prefix{a,b,c}suffix\""
     "echo \"prefix{1..10}suffix\""
     "echo p{3..2}{2..5}{ab}s"
+    "echo ~/$USER/{3..1}{abc,def}"
+    "echo {a.b}"
+    "echo {1.2}"
+    "echo {12}"
+    "echo {}"
+    "echo \}\{"
+    "echo {qweasd......}"
+    "echo {123qwe}"
     "find . -type f -iname \"*.c\" -print0 | xargs -0 cat | wc -l"
 }
 
