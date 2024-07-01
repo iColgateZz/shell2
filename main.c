@@ -17,7 +17,7 @@
 #define TOK_BUF_SIZE 64
 
 pid_t shell_pgid;
-struct termios shell_tmodes;
+struct termios shell_tmodes, raw;
 int shell_terminal;
 int shell_is_interactive;
 job *first_job = NULL;
@@ -67,7 +67,6 @@ int main(void)
             printf("%s", prompt1);
         else
             printf("%s", prompt2);
-        fflush(stdout);
         read_line(line);
         line = trim(line);
         if (line[0] == '\0')
@@ -110,7 +109,7 @@ void disable_raw_mode()
 void enable_raw_mode()
 {
     atexit(disable_raw_mode);
-    struct termios raw = shell_tmodes;
+    raw = shell_tmodes;
     cfmakeraw(&raw);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
@@ -775,7 +774,10 @@ void read_line(char *buffer)
         if (c == '\n' || c == '\r')
         {
             buffer[position] = '\0';
-            // printf("\n");
+            printf("\n");
+            printf("\r");
+            fflush(stdout);
+            // printf("The buffer is %s\n", buffer);
             return;
         }
         else if (c == 127)
@@ -783,6 +785,7 @@ void read_line(char *buffer)
             if (position > 0)
             {
                 position--;
+                buffer[position] = '\0';
                 printf("\b \b");
             }
         }
@@ -806,19 +809,22 @@ void read_line(char *buffer)
         { // Handle Ctrl-W (delete word)
             while (position > 0 && buffer[position - 1] == ' ')
             {
+                // buffer[position] = '\0';
                 position--;
                 printf("\b \b");
             }
             while (position > 0 && buffer[position - 1] != ' ')
             {
+                // buffer[position] = '\0';
                 position--;
                 printf("\b \b");
             }
+            buffer[position] = '\0';
         }
         else if (c >= 32 && c <= 126)
         { // Printable characters
             buffer[position++] = c;
-            // printf("%c", c);
+            printf("%c", c);
         }
     }
 }
@@ -1160,7 +1166,7 @@ void put_job_in_foreground(job *j, int cont)
 
     /* Restore the shell’s terminal modes.  */
     tcgetattr(shell_terminal, &j->tmodes);
-    tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
+    tcsetattr(shell_terminal, TCSADRAIN, &raw);
 }
 
 /* Put a job in the background.  If the cont argument is true, send

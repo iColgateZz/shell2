@@ -31,12 +31,18 @@ void init_line_editing() {
     signal(SIGWINCH, handle_sigwinch);
 }
 
+void clear_line() {
+    printf("\33[2K\r"); // Clear the entire line and move the cursor to the beginning
+}
+
 void read_line(char *buffer) {
     int position = 0;
     int c;
 
     while (1) {
         c = getchar();
+        clear_line();
+        fflush(stdout);
 
         if (c == '\n' || c == '\r') {
             buffer[position] = '\0';
@@ -45,31 +51,28 @@ void read_line(char *buffer) {
         } else if (c == 127) { // Handle backspace
             if (position > 0) {
                 position--;
-                printf("\b \b");
+                buffer[position] = '\0';
             }
         } else if (c == 1) { // Handle Ctrl-A (move to beginning)
-            while (position > 0) {
-                printf("\b");
-                position--;
-            }
+            position = 0;
         } else if (c == 5) { // Handle Ctrl-E (move to end)
-            while (buffer[position] != '\0') {
-                printf("%c", buffer[position]);
-                position++;
-            }
+            position = strlen(buffer);
         } else if (c == 23) { // Handle Ctrl-W (delete word)
             while (position > 0 && buffer[position - 1] == ' ') {
                 position--;
-                printf("\b \b");
             }
             while (position > 0 && buffer[position - 1] != ' ') {
                 position--;
-                printf("\b \b");
             }
+            buffer[position] = '\0';
         } else if (c >= 32 && c <= 126) { // Printable characters
             buffer[position++] = c;
-            printf("%c", c);
+            buffer[position] = '\0';
         }
+
+        clear_line();
+        fflush(stdout);
+        printf("prompt> %s", buffer);
     }
 }
 
@@ -80,8 +83,10 @@ int main() {
 
     while (1) {
         printf("prompt> ");
+        fflush(stdout);
         read_line(buffer);
-        printf("You entered: %s\n", buffer);
+        // printf("You entered: %s\n", buffer);
+        clear_line();
     }
 
     return 0;
