@@ -24,6 +24,9 @@ job *first_job = NULL;
 int last_proc_exit_status, inverted;
 Env *first_env = NULL;
 
+void init_line_editing();
+void disable_raw_mode();
+
 int main(void)
 {
     char *line = malloc(BUF_SIZE * sizeof(char));
@@ -32,11 +35,6 @@ int main(void)
     int status = 1;
     int check_status;
     int prompt_type = 0;
-
-    /* Make sure the shell is a foreground process. */
-    init_shell();
-    /* Read data from a configuration file. */
-    read_config_file();
 
     if (!line)
     {
@@ -51,6 +49,12 @@ int main(void)
 
     char *prompt1;
     char *prompt2;
+    /* Make sure the shell is a foreground process. */
+    init_shell();
+    /* Read data from a configuration file. */
+    read_config_file();
+    /* Allow line editing. */
+    init_line_editing();
 
     do
     {
@@ -63,6 +67,7 @@ int main(void)
             printf("%s", prompt1);
         else
             printf("%s", prompt2);
+        fflush(stdout);
         read_line(line);
         line = trim(line);
         if (line[0] == '\0')
@@ -95,6 +100,31 @@ int main(void)
     free(line);
     free(tokens);
     return 0;
+}
+
+void disable_raw_mode()
+{
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &shell_tmodes);
+}
+
+void enable_raw_mode()
+{
+    atexit(disable_raw_mode);
+    struct termios raw = shell_tmodes;
+    cfmakeraw(&raw);
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+}
+
+void handle_sigwinch(int sig)
+{
+    // Handle window size change if needed
+    printf("Signal caught!\n");
+}
+
+void init_line_editing()
+{
+    enable_raw_mode();
+    signal(SIGWINCH, handle_sigwinch);
 }
 
 int *categorize_tokens(char **tokens)
@@ -742,14 +772,53 @@ void read_line(char *buffer)
     {
         c = getchar();
 
-        if (c == EOF || c == '\n')
+        if (c == '\n' || c == '\r')
         {
             buffer[position] = '\0';
+            // printf("\n");
             return;
         }
-        else
-        {
+        else if (c == 127)
+        { // Handle backspace
+            if (position > 0)
+            {
+                position--;
+                printf("\b \b");
+            }
+        }
+        else if (c == 1)
+        { // Handle Ctrl-A (move to beginning)
+            while (position > 0)
+            {
+                printf("\b");
+                position--;
+            }
+        }
+        else if (c == 5)
+        { // Handle Ctrl-E (move to end)
+            while (buffer[position] != '\0')
+            {
+                printf("%c", buffer[position]);
+                position++;
+            }
+        }
+        else if (c == 23)
+        { // Handle Ctrl-W (delete word)
+            while (position > 0 && buffer[position - 1] == ' ')
+            {
+                position--;
+                printf("\b \b");
+            }
+            while (position > 0 && buffer[position - 1] != ' ')
+            {
+                position--;
+                printf("\b \b");
+            }
+        }
+        else if (c >= 32 && c <= 126)
+        { // Printable characters
             buffer[position++] = c;
+            // printf("%c", c);
         }
     }
 }
@@ -955,6 +1024,8 @@ void launch_process(process *p, pid_t pgid,
         dup2(errfile, STDERR_FILENO);
         close(errfile);
     }
+
+    disable_raw_mode();
 
     /* Exec the new process.  Make sure we exit.  */
     execvp(p->argv[0], p->argv);
