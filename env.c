@@ -6,6 +6,7 @@
 #include "main.h"
 #include "builtin.h"
 #include <ctype.h>
+#include <glob.h>
 
 #define LINE_LEN 256
 #define MAX_PROMPT_LEN 64
@@ -478,7 +479,7 @@ void _handle_dollar_expansion(char **tokens, char *token, int index)
     // printf("END of handle_dollar\n");
 }
 
-void handle_wave(char **tokens, char *token, int index)
+void _handle_wave(char **tokens, char *token, int index)
 {
     char *home = strdup(getenv("HOME"));
     remove_first_char(token);
@@ -628,17 +629,73 @@ void _handle_curly_brace_expansion(char **tokens, char *token, int index)
     }
 }
 
+int  _is_glob_expandable(char *str) {
+    if (str[0] == '"' && endsWith(str, '"'))
+        return 0;
+    for (int i = 0; str[i] != '\0'; i++)
+    {
+        if (str[i] == '*' || str[i] == '?')
+            return 1;
+    }
+    return 0;
+}
+
+void _handle_glob_expansion(char **tokens, char *token, int index)
+{
+    glob_t glob_result;
+    int ret = glob(token, GLOB_TILDE, NULL, &glob_result);
+    if (ret != 0)
+    {
+        globfree(&glob_result);
+        fprintf(stderr, "Glob error: %d\n", ret);
+        return;
+    }
+
+    int num_matches = glob_result.gl_pathc;
+    int original_count = 0;
+    while (tokens[original_count] != NULL)
+        original_count++;
+
+    tokens = realloc(tokens, sizeof(char *) * (original_count + num_matches));
+    if (!tokens)
+    {
+        globfree(&glob_result);
+        fprintf(stderr, "Memory allocation error\n");
+        return;
+    }
+
+    memmove(&tokens[index + num_matches], &tokens[index + 1], sizeof(char *) * (original_count - index));
+
+    for (int i = 0; i < num_matches; i++)
+    {
+        tokens[index + i] = strdup(glob_result.gl_pathv[i]);
+        if (!tokens[index + i])
+        {
+            for (int j = 0; j < index + i; j++)
+            {
+                free(tokens[index + j]);
+            }
+            globfree(&glob_result);
+            fprintf(stderr, "Memory allocation error\n");
+            return;
+        }
+    }
+
+    globfree(&glob_result);
+}
+
 void expand(char **tokens)
 {
     for (int i = 0; tokens[i] != NULL; i++)
     {
         if (tokens[i][0] == '~')
-            handle_wave(tokens, tokens[i], i);
+            _handle_wave(tokens, tokens[i], i);
         while (_is_dollar_expandable(tokens[i]))
             _handle_dollar_expansion(tokens, tokens[i], i);
         while (_find_curly_brace_expansion(tokens[i]))
             _handle_curly_brace_expansion(tokens, tokens[i], i);
-        // printf("LOOP...\n");
+        if (_is_glob_expandable(tokens[i]))
+            _handle_glob_expansion(tokens, tokens[i], i);
     }
 }
 
