@@ -53,8 +53,6 @@ int main(void)
     init_shell();
     /* Read data from a configuration file. */
     read_config_file();
-    /* Allow line editing. */
-    init_line_editing();
 
     do
     {
@@ -95,6 +93,8 @@ int main(void)
             continue;
         }
     } while (status);
+
+    disable_raw_mode();
 
     free(line);
     free(tokens);
@@ -531,6 +531,8 @@ int launch_jobs(wrapper **list)
                 }
             }
         }
+        printf("\r");
+        fflush(stdout);
     }
     return status;
 }
@@ -777,7 +779,6 @@ void read_line(char *buffer)
             printf("\n");
             printf("\r");
             fflush(stdout);
-            // printf("The buffer is %s\n", buffer);
             return;
         }
         else if (c == 127)
@@ -945,6 +946,9 @@ void init_shell()
 
         /* Save default terminal attributes for shell.  */
         tcgetattr(shell_terminal, &shell_tmodes);
+
+        /* Allow line editing. */
+        init_line_editing();
     }
 }
 
