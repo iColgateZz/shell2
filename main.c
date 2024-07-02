@@ -1263,7 +1263,8 @@ void wait_for_job(job *j)
 /* Format information about job status for the user to look at.  */
 void format_job_info(job *j, const char *status)
 {
-    // fprintf(stderr, "%ld (%s): %s\n", (long)j->pgid, status, j->command);
+    fprintf(stderr, "%ld (%s): %s\n\r", (long)j->pgid, status, j->command);
+    fflush(stderr);
 }
 
 /* Notify the user about stopped or terminated jobs.

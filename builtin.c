@@ -122,6 +122,8 @@ int psh_jobs(char **args)
         }
         j = j->next;
     }
+    printf("\r");
+    fflush(stdout);
     return 1;
 }
 
