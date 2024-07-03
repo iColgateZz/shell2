@@ -12,89 +12,158 @@
 #include "main.h"
 #include "env.h"
 #include <ctype.h>
+#include "custom_print.h"
+#include "history.h"
 
 #define BUF_SIZE 1024
 #define TOK_BUF_SIZE 64
 
 pid_t shell_pgid;
-struct termios shell_tmodes;
+struct termios shell_tmodes, raw;
 int shell_terminal;
 int shell_is_interactive;
 job *first_job = NULL;
 int last_proc_exit_status, inverted;
 Env *first_env = NULL;
+History *last_history = NULL;
+History *cur_history = NULL;
+
+void init_line_editing();
+void disable_raw_mode();
+void free_tokens(char **tokens);
+void free_wr_list(wrapper **list);
 
 int main(void)
 {
     char *line = malloc(BUF_SIZE * sizeof(char));
-    char **tokens = malloc(TOK_BUF_SIZE * sizeof(char *));
+    char **tokens;
     wrapper **list;
     int status = 1;
     int check_status;
     int prompt_type = 0;
 
-    /* Make sure the shell is a foreground process. */
-    init_shell();
-    /* Read data from a configuration file. */
-    read_config_file();
-
     if (!line)
     {
-        fprintf(stderr, "psh: allocation error\n");
-        exit(EXIT_FAILURE);
-    }
-    if (!tokens)
-    {
-        fprintf(stderr, "psh: allocation error\n");
+        my_fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
     }
 
     char *prompt1;
     char *prompt2;
+    /* Make sure the shell is a foreground process. */
+    init_shell();
+    /* Read data from a configuration file. */
+    read_config_file();
+    /* Read data from the history file. */
+    load_history();
 
     do
     {
-        /* Updating the prompts for dir and branch changes. */
-        prompt1 = configure_prompt("PS1");
-        prompt2 = configure_prompt("PS2");
-
         /* Regular shell cycle. */
-        if (prompt_type == 0)
+
+        /* Updating the prompts for dir and branch changes.
+           In case the prompt is configured via .pshrc file.  */
+        if (prompt_type == 0){
+            prompt1 = configure_prompt("PS1");
             printf("%s", prompt1);
-        else
+        } else {
+            prompt2 = configure_prompt("PS2");
             printf("%s", prompt2);
+        }
+
         read_line(line);
         line = trim(line);
+        /* Empty command check. */
         if (line[0] == '\0')
             continue;
-        tokenize(tokens, line);
+
+        /* Check if the provided line can be parsed. */
+        tokens = tokenize(line);
         if ((check_status = check_tokens(tokens)) == 0)
         {
-            expand(tokens);
+            expand(tokens);       // perform various expansions
+            add_to_history(line); // manage history
+            cur_history = NULL;
             list = create_jobs(tokens);
             if (list == NULL)
+            {
+                free(list);
                 continue;
+            }
             status = launch_jobs(list);
             do_job_notification();
             prompt_type = 0;
             line[0] = '\0';
+
+            free_wr_list(list);
+            free_tokens(tokens);
         }
         else if (check_status == 1)
         {
             prompt_type = 1;
+            free_tokens(tokens);
             continue;
         }
         else
         {
             line[0] = '\0';
             prompt_type = 0;
+            free_tokens(tokens);
             continue;
         }
     } while (status);
 
+    disable_raw_mode();
+    save_history();
+    free_env_list();
+
     free(line);
-    free(tokens);
     return 0;
+}
+
+void free_wr_list(wrapper **list)
+{
+    for (int i = 0; list[i] != NULL; i++)
+    {
+        if (list[i]->type == OPERATOR)
+            free(list[i]->oper);
+        free(list[i]);
+    }
+    free(list);
+}
+
+void free_tokens(char **tokens)
+{
+    for (int i = 0; tokens[i] != NULL; i++)
+    {
+        free(tokens[i]);
+    }
+    free(tokens);
+}
+
+void disable_raw_mode()
+{
+    tcsetattr(shell_terminal, TCSAFLUSH, &shell_tmodes);
+}
+
+void enable_raw_mode()
+{
+    atexit(disable_raw_mode);
+    raw = shell_tmodes;
+    cfmakeraw(&raw);
+    tcsetattr(shell_terminal, TCSAFLUSH, &raw);
+}
+
+void handle_sigwinch(int sig)
+{
+    // Handle window size change if needed
+    my_printf("Resize signal caught!\n\r");
+}
+
+void init_line_editing()
+{
+    enable_raw_mode();
+    signal(SIGWINCH, handle_sigwinch);
 }
 
 int *categorize_tokens(char **tokens)
@@ -182,7 +251,7 @@ int check_tokens(char **tokens)
                     return 1;
                 else
                 {
-                    perror("Wrong after '!'");
+                    my_perror("Wrong after '!'");
                     return -1;
                 }
             }
@@ -194,7 +263,7 @@ int check_tokens(char **tokens)
             }
             else
             {
-                perror("Wrong first word!");
+                my_perror("Wrong first word!");
                 return -1;
             }
         }
@@ -213,7 +282,7 @@ int check_tokens(char **tokens)
                 }
                 else
                 {
-                    perror("Wrong after ARG!");
+                    my_perror("Wrong after ARG!");
                     return -1;
                 }
             }
@@ -231,13 +300,13 @@ int check_tokens(char **tokens)
                 }
                 else
                 {
-                    perror("Wrong after ARG2!");
+                    my_perror("Wrong after ARG2!");
                     return -1;
                 }
             }
             else
             {
-                perror("Weird error 1!");
+                my_perror("Weird error 1!");
                 return -1;
             }
 
@@ -258,13 +327,13 @@ int check_tokens(char **tokens)
                     return 1;
                 else
                 {
-                    perror("Wrong after PIPE!");
+                    my_perror("Wrong after PIPE!");
                     return -1;
                 }
             }
             else
             {
-                perror("Weird error 2!");
+                my_perror("Weird error 2!");
                 return -1;
             }
 
@@ -284,13 +353,13 @@ int check_tokens(char **tokens)
                     return 1;
                 else
                 {
-                    perror("Wrong after REDIRECTION!");
+                    my_perror("Wrong after REDIRECTION!");
                     return -1;
                 }
             }
             else
             {
-                perror("Weird error 3!");
+                my_perror("Weird error 3!");
                 return -1;
             }
 
@@ -311,13 +380,13 @@ int check_tokens(char **tokens)
                     return 1;
                 else
                 {
-                    perror("Wrong after OPERATOR!");
+                    my_perror("Wrong after OPERATOR!");
                     return -1;
                 }
             }
             else
             {
-                perror("Weird error 4!");
+                my_perror("Weird error 4!");
                 return -1;
             }
 
@@ -326,7 +395,7 @@ int check_tokens(char **tokens)
                 return 1;
             else
             {
-                perror("Wrong after LINE_CONT!");
+                my_perror("Wrong after LINE_CONT!");
                 return -1;
             }
 
@@ -347,13 +416,13 @@ int check_tokens(char **tokens)
                     return 1;
                 else
                 {
-                    perror("Wrong after QUOTE!");
+                    my_perror("Wrong after QUOTE!");
                     return -1;
                 }
             }
             else
             {
-                perror("Weird error 5!");
+                my_perror("Weird error 5!");
                 return -1;
             }
 
@@ -370,13 +439,13 @@ int check_tokens(char **tokens)
                 }
                 else
                 {
-                    perror("Wrong after QUOTE!");
+                    my_perror("Wrong after QUOTE!");
                     return -1;
                 }
             }
             else
             {
-                perror("Weird error 6!");
+                my_perror("Weird error 6!");
                 return -1;
             }
 
@@ -397,13 +466,13 @@ int check_tokens(char **tokens)
                     return 1;
                 else
                 {
-                    perror("Wrong after BG_OPER!");
+                    my_perror("Wrong after BG_OPER!");
                     return -1;
                 }
             }
             else
             {
-                perror("Weird error 7!");
+                my_perror("Weird error 7!");
                 return -1;
             }
         }
@@ -417,22 +486,22 @@ void print_list(wrapper **list)
     {
         if (list[i]->type == OPERATOR)
         {
-            printf("Type OPERATOR\n");
-            printf("Text %s\n", list[i]->oper);
+            my_printf("Type OPERATOR\n");
+            my_printf("Text %s\n", list[i]->oper);
         }
         else
         {
-            printf("Type JOB\n");
-            printf("Command %s\n", list[i]->j->command);
-            printf("PGID %d\n", list[i]->j->pgid);
-            printf("\tProcesses: \n");
+            my_printf("Type JOB\n");
+            my_printf("Command %s\n", list[i]->j->command);
+            my_printf("PGID %d\n", list[i]->j->pgid);
+            my_printf("\tProcesses: \n");
             process *temp = list[i]->j->first_process;
             do
             {
                 int k = 0;
                 while (temp->argv[k] != NULL)
                 {
-                    printf("\tArg %s\n", temp->argv[k]);
+                    my_printf("\tArg %s\n", temp->argv[k]);
                     k++;
                 }
                 temp = temp->next;
@@ -472,7 +541,10 @@ int launch_jobs(wrapper **list)
                     last_proc_exit_status = !last_proc_exit_status;
             }
             else if (strcmp(list[i - 1]->oper, "&") == 0)
+            {
                 launch_job(list[i]->j, list[i]->j->foreground);
+                last_proc_exit_status = 0;
+            }
             else if (strcmp(list[i - 1]->oper, "&&") == 0)
             {
                 if (last_proc_exit_status == EXIT_SUCCESS)
@@ -502,6 +574,8 @@ int launch_jobs(wrapper **list)
                 }
             }
         }
+        my_printf("\r");
+        // fflush(stdout);
     }
     return status;
 }
@@ -511,7 +585,7 @@ wrapper *create_job_wrapper(char **tokens, int start, int end)
     wrapper *wr = malloc(sizeof(wrapper));
     if (!wr)
     {
-        fprintf(stderr, "psh: allocation error\n");
+        my_fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
     }
     wr->type = JOB;
@@ -527,16 +601,10 @@ wrapper *create_oper_wrapper(char *str)
     wrapper *wr2 = malloc(sizeof(wrapper));
     if (!wr2)
     {
-        fprintf(stderr, "psh: allocation error\n");
+        my_fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
     }
     wr2->type = OPERATOR;
-    wr2->oper = malloc(TOK_BUF_SIZE * sizeof(char));
-    if (!wr2->oper)
-    {
-        fprintf(stderr, "psh: allocation error\n");
-        exit(EXIT_FAILURE);
-    }
     wr2->oper = strdup(str);
 
     return wr2;
@@ -552,7 +620,7 @@ wrapper **create_jobs(char **tokens)
     wrapper **list = malloc(TOK_BUF_SIZE * sizeof(wrapper *));
     if (!list)
     {
-        fprintf(stderr, "psh: allocation error\n");
+        my_fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
     }
 
@@ -609,7 +677,7 @@ job *create_job(char **tokens, int start, int end)
     job *j = malloc(sizeof(job));
     if (!j)
     {
-        fprintf(stderr, "psh: allocation error\n");
+        my_fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
     }
     j->stdin = STDIN_FILENO;
@@ -643,7 +711,7 @@ job *create_job(char **tokens, int start, int end)
             process *p = malloc(sizeof(process));
             if (!p)
             {
-                fprintf(stderr, "psh: allocation error\n");
+                my_fprintf(stderr, "psh: allocation error\n");
                 exit(EXIT_FAILURE);
             }
             p->completed = 0, p->stopped = 0;
@@ -651,7 +719,7 @@ job *create_job(char **tokens, int start, int end)
             p->argv = malloc(TOK_BUF_SIZE * sizeof(char *));
             if (!p->argv)
             {
-                fprintf(stderr, "psh: allocation error\n");
+                my_fprintf(stderr, "psh: allocation error\n");
                 exit(EXIT_FAILURE);
             }
             p->infile = NULL, p->outfile = NULL, p->errfile = NULL;
@@ -728,7 +796,10 @@ job *create_job(char **tokens, int start, int end)
 void read_line(char *buffer)
 {
     int position = strlen(buffer);
+    int cursor_pos = position;
     int c;
+
+    memset(buffer + position, '\0', BUF_SIZE - position);
 
     if (position != 0)
     {
@@ -742,25 +813,218 @@ void read_line(char *buffer)
     {
         c = getchar();
 
-        if (c == EOF || c == '\n')
+        if (c == '\n' || c == '\r')
         {
             buffer[position] = '\0';
+            my_printf("\n");
             return;
         }
-        else
-        {
-            buffer[position++] = c;
+        else if (c == 127)
+        { // Handle backspace
+            if (cursor_pos > 0)
+            {
+                memmove(&buffer[cursor_pos - 1], &buffer[cursor_pos], position - cursor_pos + 1);
+                position--;
+                cursor_pos--;
+                printf("\b \b");
+                printf("%s ", &buffer[cursor_pos]);
+                for (int i = 0; i <= position - cursor_pos; i++)
+                {
+                    printf("\b");
+                }
+            }
         }
+        else if (c == 21)
+        { // Ctrl-U - delete from cursor to the start of the line 21
+            while (cursor_pos > 0)
+            {
+                memmove(&buffer[cursor_pos - 1], &buffer[cursor_pos], position - cursor_pos + 1);
+                position--;
+                cursor_pos--;
+                printf("\b \b");
+                printf("%s ", &buffer[cursor_pos]);
+                for (int i = 0; i <= position - cursor_pos; i++)
+                {
+                    printf("\b");
+                }
+            }
+        }
+        else if (c == 11)
+        { // Ctrl-K - delete from cursor to the end of the line 11
+            if (cursor_pos < position)
+            {
+                for (int i = cursor_pos; i < position; i++)
+                {
+                    printf(" ");
+                }
+                for (int i = cursor_pos; i < position; i++)
+                {
+                    printf("\b");
+                }
+                buffer[cursor_pos] = '\0';
+                position = cursor_pos;
+            }
+        }
+        else if (c == 1)
+        { // Handle Ctrl-A (move to beginning)
+            while (cursor_pos > 0)
+            {
+                printf("\b");
+                cursor_pos--;
+            }
+        }
+        else if (c == 5)
+        { // Handle Ctrl-E (move to end)
+            while (cursor_pos < position)
+            {
+                printf("%c", buffer[cursor_pos]);
+                cursor_pos++;
+            }
+        }
+        else if (c == 23)
+        { // Handle Ctrl-W (delete word)
+            if (cursor_pos > 0)
+            {
+                int prev_c_pos = cursor_pos;
+                while (cursor_pos > 0 && buffer[cursor_pos - 1] == ' ')
+                {
+                    cursor_pos--;
+                    printf("\b \b");
+                }
+                while (cursor_pos > 0 && buffer[cursor_pos - 1] != ' ')
+                {
+                    cursor_pos--;
+                    printf("\b \b");
+                }
+                memmove(&buffer[cursor_pos], &buffer[prev_c_pos], position - prev_c_pos + 1);
+                position -= (prev_c_pos - cursor_pos);
+
+                for (int i = cursor_pos; i < position + (prev_c_pos - cursor_pos); i++)
+                {
+                    printf(" ");
+                }
+                for (int i = cursor_pos; i < position + (prev_c_pos - cursor_pos); i++)
+                {
+                    printf("\b");
+                }
+                printf("%s", &buffer[cursor_pos]);
+                for (int i = cursor_pos; i < position; i++)
+                {
+                    printf("\b");
+                }
+            }
+        }
+        else if (c >= 32 && c <= 126)
+        { // Printable characters
+            memmove(&buffer[cursor_pos + 1], &buffer[cursor_pos], position - cursor_pos + 1);
+            buffer[cursor_pos] = c;
+            position++;
+            cursor_pos++;
+            printf("%s", &buffer[cursor_pos - 1]);
+            for (int i = 0; i < position - cursor_pos; i++)
+            {
+                printf("\b");
+            }
+        }
+        else if (c == 27) // Escape character
+        {
+            c = getchar();
+            if (c == 91) // [
+            {
+                c = getchar();
+                switch (c)
+                {
+                case 'A': // Up-Arrow
+                    if (!cur_history && last_history)
+                        cur_history = last_history;
+                    else if (cur_history && cur_history->prev)
+                        cur_history = cur_history->prev;
+                    else
+                        break;
+
+                    while (cursor_pos < position)
+                    {
+                        printf("%c", buffer[cursor_pos]);
+                        cursor_pos++;
+                    }
+                    while (cursor_pos > 0)
+                    {
+                        printf("\b \b");
+                        cursor_pos--;
+                    }
+                    memset(buffer, '\0', position);
+                    position = 0;
+
+                    strcpy(buffer, cur_history->line);
+                    printf("%s", buffer);
+
+                    position = strlen(buffer);
+                    cursor_pos = position;
+                    break;
+                case 'B': // Down-Arrow
+                    if (cur_history && cur_history->next)
+                        cur_history = cur_history->next;
+                    else if (cur_history && !cur_history->next)
+                        cur_history = NULL;
+                    else
+                        break;
+                    while (cursor_pos < position)
+                    {
+                        printf("%c", buffer[cursor_pos]);
+                        cursor_pos++;
+                    }
+                    while (cursor_pos > 0)
+                    {
+                        printf("\b \b");
+                        cursor_pos--;
+                    }
+                    memset(buffer, '\0', position);
+                    position = 0;
+
+                    if (!cur_history)
+                        strcpy(buffer, "");
+                    else
+                        strcpy(buffer, cur_history->line);
+                    printf("%s", buffer);
+
+                    position = strlen(buffer);
+                    cursor_pos = position;
+                    break;
+                case 'C':
+                    if (cursor_pos < position)
+                    {
+                        printf("%c", buffer[cursor_pos]);
+                        cursor_pos++;
+                    }
+                    break;
+                case 'D':
+                    if (cursor_pos > 0)
+                    {
+                        printf("\b");
+                        cursor_pos--;
+                    }
+                    break;
+                }
+            }
+        }
+        // Ctrl-L - clear screen 12
     }
 }
 
-void tokenize(char **buffer, char *line)
+char **tokenize(char *line)
 {
     int position = 0;
     int start = 0;
     int in_quotes = 0;
     int len = strlen(line);
     char *token;
+    char **buffer = malloc(TOK_BUF_SIZE * sizeof(char *));
+    if (!buffer)
+    {
+        my_fprintf(stderr, "psh: allocation error\n");
+        exit(EXIT_FAILURE);
+    }
+    
 
     for (int i = 0; i <= len; i++)
     {
@@ -786,8 +1050,9 @@ void tokenize(char **buffer, char *line)
             }
         }
     }
-
+    
     buffer[position] = NULL;
+    return buffer;
 }
 
 /* Find the active job with the indicated pgid.  */
@@ -861,7 +1126,7 @@ void init_shell()
         shell_pgid = getpid();
         if (setpgid(shell_pgid, shell_pgid) < 0)
         {
-            perror("Couldn't put the shell in its own process group");
+            my_perror("Couldn't put the shell in its own process group");
             exit(1);
         }
 
@@ -870,6 +1135,9 @@ void init_shell()
 
         /* Save default terminal attributes for shell.  */
         tcgetattr(shell_terminal, &shell_tmodes);
+
+        /* Allow line editing. */
+        init_line_editing();
     }
 }
 
@@ -878,7 +1146,6 @@ void launch_process(process *p, pid_t pgid,
                     int foreground)
 {
     pid_t pid;
-
     if (shell_is_interactive)
     {
         /* Put the process into the process group and give the process group
@@ -909,7 +1176,7 @@ void launch_process(process *p, pid_t pgid,
         infile = open(p->infile, O_RDONLY);
         if (infile < 0)
         {
-            perror("open input file");
+            my_perror("open input file");
             exit(1);
         }
     }
@@ -923,7 +1190,7 @@ void launch_process(process *p, pid_t pgid,
             outfile = open(p->outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (outfile < 0)
         {
-            perror("open output file");
+            my_perror("open output file");
             exit(1);
         }
     }
@@ -934,7 +1201,7 @@ void launch_process(process *p, pid_t pgid,
         errfile = open(p->errfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (errfile < 0)
         {
-            perror("open error file");
+            my_perror("open error file");
             exit(1);
         }
     }
@@ -958,7 +1225,7 @@ void launch_process(process *p, pid_t pgid,
 
     /* Exec the new process.  Make sure we exit.  */
     execvp(p->argv[0], p->argv);
-    perror("execvp");
+    my_perror("execvp");
     exit(1);
 }
 
@@ -967,17 +1234,16 @@ void launch_job(job *j, int foreground)
     process *p;
     pid_t pid;
     int mypipe[2], infile, outfile;
-    char *prev_proc_outfile = (char *)malloc(TOK_BUF_SIZE);
-    if (!prev_proc_outfile)
-    {
-        fprintf(stderr, "psh: allocation error\n");
-        exit(EXIT_FAILURE);
-    }
+    char *prev_proc_outfile = NULL;
 
     infile = j->stdin;
     for (p = j->first_process; p; p = p->next)
     {
-        prev_proc_outfile = NULL;
+        if (prev_proc_outfile)
+        {
+            free(prev_proc_outfile);
+            prev_proc_outfile = NULL;
+        }
         if (p->outfile)
             prev_proc_outfile = strdup(p->outfile);
 
@@ -986,7 +1252,7 @@ void launch_job(job *j, int foreground)
         {
             if (pipe(mypipe) < 0)
             {
-                perror("pipe");
+                my_perror("pipe");
                 exit(1);
             }
             outfile = mypipe[1];
@@ -1003,7 +1269,7 @@ void launch_job(job *j, int foreground)
         else if (pid < 0)
         {
             /* The fork failed.  */
-            perror("fork");
+            my_perror("fork");
             exit(1);
         }
         else
@@ -1030,6 +1296,8 @@ void launch_job(job *j, int foreground)
             infile = open(prev_proc_outfile, O_RDONLY);
         }
     }
+    if (prev_proc_outfile)
+        free(prev_proc_outfile);
 
     format_job_info(j, "launched");
 
@@ -1073,12 +1341,16 @@ void put_job_in_foreground(job *j, int cont)
     /* Put the job into the foreground.  */
     tcsetpgrp(shell_terminal, j->pgid);
 
+    /* Foreground jobs should be launched in non-raw mode.
+       Otherwise they cause many line formatting issues. */
+    disable_raw_mode();
+
     /* Send the job a continue signal, if necessary.  */
     if (cont)
     {
         tcsetattr(shell_terminal, TCSADRAIN, &j->tmodes);
         if (kill(-j->pgid, SIGCONT) < 0)
-            perror("kill (SIGCONT)");
+            my_perror("kill (SIGCONT)");
     }
 
     /* Wait for it to report.  */
@@ -1089,7 +1361,7 @@ void put_job_in_foreground(job *j, int cont)
 
     /* Restore the shell’s terminal modes.  */
     tcgetattr(shell_terminal, &j->tmodes);
-    tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
+    tcsetattr(shell_terminal, TCSADRAIN, &raw);
 }
 
 /* Put a job in the background.  If the cont argument is true, send
@@ -1099,7 +1371,7 @@ void put_job_in_background(job *j, int cont)
     /* Send the job a continue signal, if necessary.  */
     if (cont)
         if (kill(-j->pgid, SIGCONT) < 0)
-            perror("kill (SIGCONT)");
+            my_perror("kill (SIGCONT)");
     j->in_bg = 1;
 }
 
@@ -1132,14 +1404,14 @@ int mark_process_status(pid_t pid, int status)
                         else if (WIFSIGNALED(status))
                         {
                             p->exit_status = WTERMSIG(status); // Store the signal number
-                            fprintf(stderr, "%d: Terminated by signal %d.\n",
-                                    (int)pid, WTERMSIG(p->status));
+                            my_fprintf(stderr, "%d: Terminated by signal %d.\n",
+                                       (int)pid, WTERMSIG(p->status));
                             last_proc_exit_status = p->exit_status;
                         }
                     }
                     return 0;
                 }
-        fprintf(stderr, "No child process %d.\n", pid);
+        my_fprintf(stderr, "No child process %d.\n", pid);
         return -1;
     }
     else if (pid == 0 || errno == ECHILD)
@@ -1148,7 +1420,7 @@ int mark_process_status(pid_t pid, int status)
     else
     {
         /* Other weird errors.  */
-        perror("waitpid");
+        my_perror("waitpid");
         return -1;
     }
 }
@@ -1182,7 +1454,8 @@ void wait_for_job(job *j)
 /* Format information about job status for the user to look at.  */
 void format_job_info(job *j, const char *status)
 {
-    // fprintf(stderr, "%ld (%s): %s\n", (long)j->pgid, status, j->command);
+    my_fprintf(stderr, "%ld (%s): %s\n", (long)j->pgid, status, j->command);
+    // fflush(stderr);
 }
 
 /* Notify the user about stopped or terminated jobs.
@@ -1266,10 +1539,25 @@ void free_job(job *j)
     while (p != NULL)
     {
         process *next = p->next;
-        free(p->argv);
+
+        // Free each argument string in argv
+        if (p->argv)
+        {
+            for (char **arg = p->argv; *arg != NULL; ++arg)
+            {
+                free(*arg);
+            }
+            free(p->argv);
+        }
+
+        // Free the process structure itself
         free(p);
+
         p = next;
     }
-    free(j->command);
+
+    // Free the command string and the job structure itself
+    if (j->command)
+        free(j->command);
     free(j);
 }

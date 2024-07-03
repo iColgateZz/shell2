@@ -41,7 +41,7 @@ typedef struct wrapper
 } wrapper;
 
 void read_line(char *buffer);
-void tokenize(char **buffer, char *line);
+char **tokenize(char *line);
 void init_shell();
 job *create_job(char **tokens, int start, int end);
 void launch_job(job *j, int foreground);

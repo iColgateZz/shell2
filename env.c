@@ -7,9 +7,11 @@
 #include "builtin.h"
 #include <ctype.h>
 #include <glob.h>
+#include "custom_print.h"
 
 #define LINE_LEN 256
 #define MAX_PROMPT_LEN 64
+#define CONFIG_FILE ".pshrc"
 
 extern Env *first_env;
 extern int last_proc_exit_status;
@@ -69,8 +71,8 @@ void psh_setenv(char *name, char *value)
 
     if (found)
     {
-        free(last_env->value);
-        last_env->value = strdup(value);
+        free(temp->value);
+        temp->value = strdup(value);
     }
     else
     {
@@ -114,15 +116,25 @@ void psh_unsetenv(char *name)
 
 char **_split_string(char *str, char *c)
 {
-    char *arr[2];
+    char **arr = malloc(2 * sizeof(char *));
+    if (!arr)
+        return NULL;
+
     char *token = strtok(str, c);
     if (!token)
+    {
+        free(arr);
         return NULL;
-    arr[0] = trim(token);
+    }
+    arr[0] = strdup(trim(token));
     token = strtok(NULL, c);
     if (!token)
+    {
+        free(arr[0]);
+        free(arr);
         return NULL;
-    arr[1] = trim(token);
+    }
+    arr[1] = strdup(trim(token));
 
     if (arr[1][0] == '"' && arr[1][strlen(arr[1]) - 1] == '"')
     {
@@ -137,7 +149,7 @@ char **_split_string(char *str, char *c)
 /* Reads the configuration file and sets the environmental variables accordingly. */
 void read_config_file()
 {
-    char *filename = ".pshrc";
+    char *filename = CONFIG_FILE;
     char line[LINE_LEN];
     FILE *file;
     char **arr;
@@ -145,7 +157,7 @@ void read_config_file()
     file = fopen(filename, "r");
     if (file == NULL)
     {
-        perror("Error opening file");
+        my_perror("Error opening file");
         exit(1);
     }
 
@@ -154,7 +166,13 @@ void read_config_file()
         if (line[0] != '#' && strchr(line, '='))
         {
             arr = _split_string(line, "=");
-            psh_setenv(arr[0], arr[1]);
+            if (arr)
+            {
+                psh_setenv(arr[0], arr[1]);
+                free(arr[0]);
+                free(arr[1]);
+                free(arr);
+            }
         }
     }
 
@@ -169,7 +187,7 @@ char *_get_current_dir()
     fp = popen("pwd", "r");
     if (fp == NULL)
     {
-        fprintf(stderr, "Failed to run command\n");
+        my_fprintf(stderr, "Failed to run command\n");
         exit(1);
     }
 
@@ -190,7 +208,7 @@ char *_get_current_dir()
     char *result = strdup(last);
     if (!result)
     {
-        perror("Memory allocation error");
+        my_perror("Memory allocation error");
         exit(1);
     }
 
@@ -205,7 +223,7 @@ char *_get_current_git_branch()
     fp = popen("git rev-parse --abbrev-ref HEAD 2>/dev/null", "r");
     if (fp == NULL)
     {
-        fprintf(stderr, "Failed to run command\n");
+        my_fprintf(stderr, "Failed to run command\n");
         exit(1);
     }
 
@@ -221,7 +239,7 @@ char *_get_current_git_branch()
     char *result = strdup(path);
     if (!result)
     {
-        perror("Memory allocation error");
+        my_perror("Memory allocation error");
         exit(1);
     }
 
@@ -233,7 +251,7 @@ char *_parse_ps_var(char *var)
     char *temp = malloc(MAX_PROMPT_LEN * sizeof(char));
     if (!temp)
     {
-        perror("psh: allocation error");
+        my_perror("psh: allocation error");
         exit(1);
     }
     int counter = 0;
@@ -267,7 +285,7 @@ char *_parse_ps_var(char *var)
                 break;
             }
             default:
-                fprintf(stderr, "Unexpected token after '-': %c\n", var[i]);
+                my_fprintf(stderr, "Unexpected token after '-': %c\n", var[i]);
                 break;
             }
         }
@@ -296,10 +314,9 @@ void remove_first_char(char *str)
 {
     if (str == NULL || strlen(str) == 0)
     {
-        return; // If the string is NULL or empty, do nothing
+        return;
     }
 
-    // Shift all characters one position to the left
     for (int i = 1; i <= strlen(str); i++)
     {
         str[i - 1] = str[i];
@@ -474,6 +491,12 @@ void _handle_dollar_expansion(char **tokens, char *token, int index)
     free(suffix);
     free(expanded_content);
 
+    // my_printf("New_token %s\n", new_token);
+    // my_printf("Tokens[index] %s\n", tokens[index]);
+    // my_printf("Token %s\n", token);
+    // my_printf("Tokens[index] pointer %p\n", tokens[index]);
+    // my_printf("Token pointer %p\n", token);
+
     free(tokens[index]);
     tokens[index] = new_token;
     // printf("END of handle_dollar\n");
@@ -627,9 +650,11 @@ void _handle_curly_brace_expansion(char **tokens, char *token, int index)
 
         free(new_tokens);
     }
+    free(token);
 }
 
-int  _is_glob_expandable(char *str) {
+int _is_glob_expandable(char *str)
+{
     if (str[0] == '"' && endsWith(str, '"'))
         return 0;
     for (int i = 0; str[i] != '\0'; i++)
@@ -647,7 +672,7 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
     if (ret != 0)
     {
         globfree(&glob_result);
-        fprintf(stderr, "Glob error: %d\n", ret);
+        my_fprintf(stderr, "Glob error: %d\n", ret);
         return;
     }
 
@@ -660,7 +685,7 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
     if (!tokens)
     {
         globfree(&glob_result);
-        fprintf(stderr, "Memory allocation error\n");
+        my_fprintf(stderr, "Memory allocation error\n");
         return;
     }
 
@@ -676,12 +701,13 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
                 free(tokens[index + j]);
             }
             globfree(&glob_result);
-            fprintf(stderr, "Memory allocation error\n");
+            my_fprintf(stderr, "Memory allocation error\n");
             return;
         }
     }
 
     globfree(&glob_result);
+    free(token);
 }
 
 void expand(char **tokens)

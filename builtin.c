@@ -6,6 +6,8 @@
 #include "main.h"
 #include <ctype.h>
 #include "env.h"
+#include "custom_print.h"
+#include "history.h"
 
 extern job *first_job;
 extern Env *first_env;
@@ -14,13 +16,13 @@ int psh_cd(char **args)
 {
     if (args[1] == NULL)
     {
-        fprintf(stderr, "psh: expected argument to \"cd\"\n");
+        my_fprintf(stderr, "psh: expected argument to \"cd\"\n");
     }
     else
     {
         if (chdir(args[1]) != 0)
         {
-            perror("psh");
+            my_perror("psh");
         }
     }
     return 1;
@@ -29,14 +31,14 @@ int psh_cd(char **args)
 int psh_help(char **args)
 {
     int i;
-    printf("PSH\n");
-    printf("Type program names and arguments, and hit enter.\n");
-    printf("The following are built in:\n");
+    my_printf("PSH\n");
+    my_printf("Type program names and arguments, and hit enter.\n");
+    my_printf("The following are built in:\n");
     for (i = 0; i < psh_num_builtins(); i++)
     {
-        printf("  %s\n", builtin_str[i]);
+        my_printf("  %s\n", builtin_str[i]);
     }
-    printf("Use the \"man\" command for information on other programs.\n");
+    my_printf("Use the \"man\" command for information on other programs.\n");
     return 1;
 }
 
@@ -47,11 +49,17 @@ int psh_exit(char **args)
     while (j2)
     {
         if (j2->pgid > 0 && killpg(j2->pgid, SIGHUP) < 0)
-            perror("kill (SIGHUP)");
+            my_perror("kill (SIGHUP)");
         j2 = j2->next;
     }
 
     return 0;
+}
+
+int psh_history(char **args)
+{
+    print_history();
+    return 1;
 }
 
 /* Find the last job that started running in the background. */
@@ -118,7 +126,7 @@ int psh_jobs(char **args)
                 plus_or_minus = "+";
             else if (last_stopped != NULL)
                 plus_or_minus = "-";
-            printf("[%d] %s %s %d %s\n", counter++, plus_or_minus, stopped_or_running, j->pgid, j->command);
+            my_printf("[%d] %s %s %d %s\n", counter++, plus_or_minus, stopped_or_running, j->pgid, j->command);
         }
         j = j->next;
     }
@@ -248,7 +256,7 @@ int psh_set(char **argv)
     int elem_count = count_elem_in_list(argv);
     if (elem_count < 2)
     {
-        fprintf(stderr, "Not enough arguments\n");
+        my_fprintf(stderr, "Not enough arguments\n");
         return 1;
     }
     char **arr;
@@ -259,14 +267,14 @@ int psh_set(char **argv)
             arr = _split_string(argv[i], "=");
             if (!arr)
             {
-                fprintf(stderr, "Argument must be of type NAME=VALUE, but was %s\n", argv[i]);
+                my_fprintf(stderr, "Argument must be of type NAME=VALUE, but was %s\n", argv[i]);
                 break;
             }
             psh_setenv(arr[0], arr[1]);
         }
         else
         {
-            fprintf(stderr, "Argument must be of type NAME=VALUE, but was %s\n", argv[i]);
+            my_fprintf(stderr, "Argument must be of type NAME=VALUE, but was %s\n", argv[i]);
             break;
         }
     }
@@ -279,7 +287,7 @@ int psh_unset(char **argv)
     int elem_count = count_elem_in_list(argv);
     if (elem_count < 2)
     {
-        fprintf(stderr, "Not enough arguments\n");
+        my_fprintf(stderr, "Not enough arguments\n");
         return 1;
     }
     for (int i = 1; argv[i] != NULL; i++)
@@ -297,7 +305,9 @@ builtin_func func_arr[] = {
     &psh_bg,
     &psh_source,
     &psh_set,
-    &psh_unset};
+    &psh_unset,
+    &psh_history
+    };
 
 // Array of built-in command strings
 char *builtin_str[] = {
@@ -309,7 +319,9 @@ char *builtin_str[] = {
     "bg",
     "source",
     "set",
-    "unset"};
+    "unset",
+    "history"
+    };
 
 int psh_num_builtins()
 {
