@@ -10,6 +10,7 @@
 
 #define LINE_LEN 256
 #define MAX_PROMPT_LEN 64
+#define CONFIG_FILE ".pshrc"
 
 extern Env *first_env;
 extern int last_proc_exit_status;
@@ -137,7 +138,7 @@ char **_split_string(char *str, char *c)
 /* Reads the configuration file and sets the environmental variables accordingly. */
 void read_config_file()
 {
-    char *filename = ".pshrc";
+    char *filename = CONFIG_FILE;
     char line[LINE_LEN];
     FILE *file;
     char **arr;
@@ -296,10 +297,9 @@ void remove_first_char(char *str)
 {
     if (str == NULL || strlen(str) == 0)
     {
-        return; // If the string is NULL or empty, do nothing
+        return;
     }
 
-    // Shift all characters one position to the left
     for (int i = 1; i <= strlen(str); i++)
     {
         str[i - 1] = str[i];

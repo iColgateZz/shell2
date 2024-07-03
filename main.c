@@ -13,6 +13,7 @@
 #include "env.h"
 #include <ctype.h>
 #include "custom_print.h"
+#include "history.h"
 
 #define BUF_SIZE 1024
 #define TOK_BUF_SIZE 64
@@ -24,6 +25,8 @@ int shell_is_interactive;
 job *first_job = NULL;
 int last_proc_exit_status, inverted;
 Env *first_env = NULL;
+History *last_history = NULL;
+History *cur_history = NULL;
 
 void init_line_editing();
 void disable_raw_mode();
@@ -772,6 +775,7 @@ job *create_job(char **tokens, int start, int end)
 void read_line(char *buffer)
 {
     int position = strlen(buffer);
+    int cursor_pos = position;
     int c;
 
     if (position != 0)
@@ -794,75 +798,142 @@ void read_line(char *buffer)
         }
         else if (c == 127)
         { // Handle backspace
-            if (position > 0)
+            if (cursor_pos > 0)
             {
+                memmove(&buffer[cursor_pos - 1], &buffer[cursor_pos], position - cursor_pos + 1);
                 position--;
-                buffer[position] = '\0';
+                cursor_pos--;
                 printf("\b \b");
+                printf("%s ", &buffer[cursor_pos]);
+                for (int i = 0; i <= position - cursor_pos; i++)
+                {
+                    printf("\b");
+                }
+            }
+        }
+        else if (c == 21)
+        { // Ctrl-U - delete from cursor to the start of the line 21
+            while (cursor_pos > 0)
+            {
+                memmove(&buffer[cursor_pos - 1], &buffer[cursor_pos], position - cursor_pos + 1);
+                position--;
+                cursor_pos--;
+                printf("\b \b");
+                printf("%s ", &buffer[cursor_pos]);
+                for (int i = 0; i <= position - cursor_pos; i++)
+                {
+                    printf("\b");
+                }
+            }
+        }
+        else if (c == 11)
+        { // Ctrl-K - delete from cursor to the end of the line 11
+            if (cursor_pos < position)
+            {
+                for (int i = cursor_pos; i < position; i++)
+                {
+                    printf(" ");
+                }
+                for (int i = cursor_pos; i < position; i++)
+                {
+                    printf("\b");
+                }
+                buffer[cursor_pos] = '\0';
+                position = cursor_pos;
             }
         }
         else if (c == 1)
         { // Handle Ctrl-A (move to beginning)
-            while (position > 0)
+            while (cursor_pos > 0)
             {
                 printf("\b");
-                position--;
+                cursor_pos--;
             }
         }
         else if (c == 5)
         { // Handle Ctrl-E (move to end)
-            while (buffer[position] != '\0')
+            while (cursor_pos < position)
             {
-                printf("%c", buffer[position]);
-                position++;
+                printf("%c", buffer[cursor_pos]);
+                cursor_pos++;
             }
         }
         else if (c == 23)
         { // Handle Ctrl-W (delete word)
-            while (position > 0 && buffer[position - 1] == ' ')
+            if (cursor_pos > 0)
             {
-                // buffer[position] = '\0';
-                position--;
-                printf("\b \b");
+                int prev_c_pos = cursor_pos;
+                while (cursor_pos > 0 && buffer[cursor_pos - 1] == ' ')
+                {
+                    cursor_pos--;
+                    printf("\b \b");
+                }
+                while (cursor_pos > 0 && buffer[cursor_pos - 1] != ' ')
+                {
+                    cursor_pos--;
+                    printf("\b \b");
+                }
+                memmove(&buffer[cursor_pos], &buffer[prev_c_pos], position - prev_c_pos + 1);
+                position -= (prev_c_pos - cursor_pos);
+
+                for (int i = cursor_pos; i < position + (prev_c_pos - cursor_pos); i++)
+                {
+                    printf(" ");
+                }
+                for (int i = cursor_pos; i < position + (prev_c_pos - cursor_pos); i++)
+                {
+                    printf("\b");
+                }
+                printf("%s", &buffer[cursor_pos]);
+                for (int i = cursor_pos; i < position; i++)
+                {
+                    printf("\b");
+                }
             }
-            while (position > 0 && buffer[position - 1] != ' ')
-            {
-                // buffer[position] = '\0';
-                position--;
-                printf("\b \b");
-            }
-            buffer[position] = '\0';
         }
         else if (c >= 32 && c <= 126)
         { // Printable characters
-            buffer[position++] = c;
-            printf("%c", c);
+            memmove(&buffer[cursor_pos + 1], &buffer[cursor_pos], position - cursor_pos + 1);
+            buffer[cursor_pos] = c;
+            position++;
+            cursor_pos++;
+            printf("%s", &buffer[cursor_pos - 1]);
+            for (int i = 0; i < position - cursor_pos; i++)
+            {
+                printf("\b");
+            }
         }
-        // else if (c == 27)
-        // {
-        //     c = getchar();
-        //     if (c == 91)
-        //     {
-        //         c = getchar();
-        //         switch (c)
-        //         {
-        //         case 'A':
-        //             printf("Up Arrow\n");
-        //             break;
-        //         case 'B':
-        //             printf("Down Arrow\n");
-        //             break;
-        //         case 'C':
-        //             printf("Right Arrow\n");
-        //             break;
-        //         case 'D':
-        //             printf("Left Arrow\n");
-        //             break;
-        //         }
-        //     }
-        // }
-        // Ctrl-U - delete from cursor to the start of the line 21
-        // Ctrl-K - delete from cursor to the end of the line 11
+        else if (c == 27) // Escape character
+        {
+            c = getchar();
+            if (c == 91) // [
+            {
+                c = getchar();
+                switch (c)
+                {
+                case 'A':
+                    my_printf("Up Arrow\n");
+                    break;
+                case 'B':
+                    my_printf("Down Arrow\n");
+                    break;
+                case 'C':
+                    if (cursor_pos < position)
+                    {
+                        printf("%c", buffer[cursor_pos]);
+                        cursor_pos++;
+                    }
+                    break;
+                case 'D':
+                    if (cursor_pos > 0)
+                    {
+                        printf("\b");
+                        cursor_pos--;
+                    }
+                    break;
+                }
+            }
+        }
         // Ctrl-L - clear screen 12
     }
 }
