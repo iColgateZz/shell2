@@ -71,8 +71,8 @@ void psh_setenv(char *name, char *value)
 
     if (found)
     {
-        free(last_env->value);
-        last_env->value = strdup(value);
+        free(temp->value);
+        temp->value = strdup(value);
     }
     else
     {
@@ -116,15 +116,25 @@ void psh_unsetenv(char *name)
 
 char **_split_string(char *str, char *c)
 {
-    char *arr[2];
+    char **arr = malloc(2 * sizeof(char *));
+    if (!arr)
+        return NULL;
+
     char *token = strtok(str, c);
     if (!token)
+    {
+        free(arr);
         return NULL;
-    arr[0] = trim(token);
+    }
+    arr[0] = strdup(trim(token));
     token = strtok(NULL, c);
     if (!token)
+    {
+        free(arr[0]);
+        free(arr);
         return NULL;
-    arr[1] = trim(token);
+    }
+    arr[1] = strdup(trim(token));
 
     if (arr[1][0] == '"' && arr[1][strlen(arr[1]) - 1] == '"')
     {
@@ -156,7 +166,13 @@ void read_config_file()
         if (line[0] != '#' && strchr(line, '='))
         {
             arr = _split_string(line, "=");
-            psh_setenv(arr[0], arr[1]);
+            if (arr)
+            {
+                psh_setenv(arr[0], arr[1]);
+                free(arr[0]);
+                free(arr[1]);
+                free(arr);
+            }
         }
     }
 
@@ -475,6 +491,12 @@ void _handle_dollar_expansion(char **tokens, char *token, int index)
     free(suffix);
     free(expanded_content);
 
+    // my_printf("New_token %s\n", new_token);
+    // my_printf("Tokens[index] %s\n", tokens[index]);
+    // my_printf("Token %s\n", token);
+    // my_printf("Tokens[index] pointer %p\n", tokens[index]);
+    // my_printf("Token pointer %p\n", token);
+
     free(tokens[index]);
     tokens[index] = new_token;
     // printf("END of handle_dollar\n");
@@ -628,9 +650,11 @@ void _handle_curly_brace_expansion(char **tokens, char *token, int index)
 
         free(new_tokens);
     }
+    free(token);
 }
 
-int  _is_glob_expandable(char *str) {
+int _is_glob_expandable(char *str)
+{
     if (str[0] == '"' && endsWith(str, '"'))
         return 0;
     for (int i = 0; str[i] != '\0'; i++)
@@ -683,6 +707,7 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
     }
 
     globfree(&glob_result);
+    free(token);
 }
 
 void expand(char **tokens)

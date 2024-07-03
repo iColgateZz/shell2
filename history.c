@@ -26,14 +26,15 @@ int _count_history_size()
 
 void free_history()
 {
-    History *temp = last_history;
-    while (temp)
+    History *temp;
+    History *head = first_history;
+    while (head != NULL)
     {
+        temp = head;
+        head = head->next;
         free(temp->line);
-        free(temp->next);
-        temp = temp->prev;
+        free(temp);
     }
-    free(temp);
 }
 
 void load_history()

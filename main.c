@@ -36,18 +36,13 @@ void free_wr_list(wrapper **list);
 int main(void)
 {
     char *line = malloc(BUF_SIZE * sizeof(char));
-    char **tokens = malloc(TOK_BUF_SIZE * sizeof(char *));
+    char **tokens;
     wrapper **list;
     int status = 1;
     int check_status;
     int prompt_type = 0;
 
     if (!line)
-    {
-        my_fprintf(stderr, "psh: allocation error\n");
-        exit(EXIT_FAILURE);
-    }
-    if (!tokens)
     {
         my_fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
@@ -68,13 +63,13 @@ int main(void)
 
         /* Updating the prompts for dir and branch changes.
            In case the prompt is configured via .pshrc file.  */
-        prompt1 = configure_prompt("PS1");
-        prompt2 = configure_prompt("PS2");
-
-        if (prompt_type == 0)
+        if (prompt_type == 0){
+            prompt1 = configure_prompt("PS1");
             printf("%s", prompt1);
-        else
+        } else {
+            prompt2 = configure_prompt("PS2");
             printf("%s", prompt2);
+        }
 
         read_line(line);
         line = trim(line);
@@ -83,7 +78,7 @@ int main(void)
             continue;
 
         /* Check if the provided line can be parsed. */
-        tokenize(tokens, line);
+        tokens = tokenize(line);
         if ((check_status = check_tokens(tokens)) == 0)
         {
             expand(tokens);       // perform various expansions
@@ -91,22 +86,29 @@ int main(void)
             cur_history = NULL;
             list = create_jobs(tokens);
             if (list == NULL)
+            {
+                free(list);
                 continue;
+            }
             status = launch_jobs(list);
             do_job_notification();
-            free_wr_list(list);
             prompt_type = 0;
             line[0] = '\0';
+
+            free_wr_list(list);
+            free_tokens(tokens);
         }
         else if (check_status == 1)
         {
             prompt_type = 1;
+            free_tokens(tokens);
             continue;
         }
         else
         {
             line[0] = '\0';
             prompt_type = 0;
+            free_tokens(tokens);
             continue;
         }
     } while (status);
@@ -116,14 +118,12 @@ int main(void)
     free_env_list();
 
     free(line);
-    free_tokens(tokens);
-    free(tokens);
     return 0;
 }
 
 void free_wr_list(wrapper **list)
 {
-    for (int i = 0; i < TOK_BUF_SIZE; i++)
+    for (int i = 0; list[i] != NULL; i++)
     {
         if (list[i]->type == OPERATOR)
             free(list[i]->oper);
@@ -134,8 +134,11 @@ void free_wr_list(wrapper **list)
 
 void free_tokens(char **tokens)
 {
-    for (int i = 0; i < TOK_BUF_SIZE; i++)
+    for (int i = 0; tokens[i] != NULL; i++)
+    {
         free(tokens[i]);
+    }
+    free(tokens);
 }
 
 void disable_raw_mode()
@@ -1008,14 +1011,19 @@ void read_line(char *buffer)
     }
 }
 
-void tokenize(char **buffer, char *line)
+char **tokenize(char *line)
 {
     int position = 0;
     int start = 0;
     int in_quotes = 0;
     int len = strlen(line);
     char *token;
-    // char **buffer = malloc(TOK_BUF_SIZE * sizeof(char *));
+    char **buffer = malloc(TOK_BUF_SIZE * sizeof(char *));
+    if (!buffer)
+    {
+        my_fprintf(stderr, "psh: allocation error\n");
+        exit(EXIT_FAILURE);
+    }
     
 
     for (int i = 0; i <= len; i++)
@@ -1042,8 +1050,9 @@ void tokenize(char **buffer, char *line)
             }
         }
     }
-
+    
     buffer[position] = NULL;
+    return buffer;
 }
 
 /* Find the active job with the indicated pgid.  */
@@ -1540,14 +1549,6 @@ void free_job(job *j)
             }
             free(p->argv);
         }
-
-        // Free infile, outfile, and errfile if they are not NULL
-        if (p->infile)
-            free(p->infile);
-        if (p->outfile)
-            free(p->outfile);
-        if (p->errfile)
-            free(p->errfile);
 
         // Free the process structure itself
         free(p);

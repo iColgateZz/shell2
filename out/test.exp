@@ -73,7 +73,7 @@ set commands {
     "mkdir ~/.lol    &&    ls    ~/.lol   |    wc -l    && rm -r ~/.lol;   echo done  "
     "echo {ab,cd}{1..2}{3..1}"
     "echo $HOME$USER"
-    "echo ~/$USER/{1..5}"
+    "ec"
     "echo {1..5} > out/lol.txt | wc -l"
     "echo \"Inside the quotes it does $PWD\""
     "echo {a.b}"
