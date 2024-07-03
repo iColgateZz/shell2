@@ -8,7 +8,7 @@ CFLAGS = -Wall -g
 TARGET = psh
 
 # Source files
-SRCS = main.c builtin.c helpers.c env.c custom_print.c
+SRCS = main.c builtin.c helpers.c env.c custom_print.c history.c
 
 # Object files
 OBJS = $(SRCS:.c=.o)

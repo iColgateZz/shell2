@@ -8,4 +8,9 @@ typedef struct History
     char *line;
 } History;
 
+void load_history();
+void save_history();
+void add_to_history(const char *command);
+void print_history();
+
 #endif

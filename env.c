@@ -7,6 +7,7 @@
 #include "builtin.h"
 #include <ctype.h>
 #include <glob.h>
+#include "custom_print.h"
 
 #define LINE_LEN 256
 #define MAX_PROMPT_LEN 64
@@ -146,7 +147,7 @@ void read_config_file()
     file = fopen(filename, "r");
     if (file == NULL)
     {
-        perror("Error opening file");
+        my_perror("Error opening file");
         exit(1);
     }
 
@@ -170,7 +171,7 @@ char *_get_current_dir()
     fp = popen("pwd", "r");
     if (fp == NULL)
     {
-        fprintf(stderr, "Failed to run command\n");
+        my_fprintf(stderr, "Failed to run command\n");
         exit(1);
     }
 
@@ -191,7 +192,7 @@ char *_get_current_dir()
     char *result = strdup(last);
     if (!result)
     {
-        perror("Memory allocation error");
+        my_perror("Memory allocation error");
         exit(1);
     }
 
@@ -206,7 +207,7 @@ char *_get_current_git_branch()
     fp = popen("git rev-parse --abbrev-ref HEAD 2>/dev/null", "r");
     if (fp == NULL)
     {
-        fprintf(stderr, "Failed to run command\n");
+        my_fprintf(stderr, "Failed to run command\n");
         exit(1);
     }
 
@@ -222,7 +223,7 @@ char *_get_current_git_branch()
     char *result = strdup(path);
     if (!result)
     {
-        perror("Memory allocation error");
+        my_perror("Memory allocation error");
         exit(1);
     }
 
@@ -234,7 +235,7 @@ char *_parse_ps_var(char *var)
     char *temp = malloc(MAX_PROMPT_LEN * sizeof(char));
     if (!temp)
     {
-        perror("psh: allocation error");
+        my_perror("psh: allocation error");
         exit(1);
     }
     int counter = 0;
@@ -268,7 +269,7 @@ char *_parse_ps_var(char *var)
                 break;
             }
             default:
-                fprintf(stderr, "Unexpected token after '-': %c\n", var[i]);
+                my_fprintf(stderr, "Unexpected token after '-': %c\n", var[i]);
                 break;
             }
         }
@@ -647,7 +648,7 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
     if (ret != 0)
     {
         globfree(&glob_result);
-        fprintf(stderr, "Glob error: %d\n", ret);
+        my_fprintf(stderr, "Glob error: %d\n", ret);
         return;
     }
 
@@ -660,7 +661,7 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
     if (!tokens)
     {
         globfree(&glob_result);
-        fprintf(stderr, "Memory allocation error\n");
+        my_fprintf(stderr, "Memory allocation error\n");
         return;
     }
 
@@ -676,7 +677,7 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
                 free(tokens[index + j]);
             }
             globfree(&glob_result);
-            fprintf(stderr, "Memory allocation error\n");
+            my_fprintf(stderr, "Memory allocation error\n");
             return;
         }
     }

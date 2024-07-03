@@ -30,13 +30,8 @@ History *cur_history = NULL;
 
 void init_line_editing();
 void disable_raw_mode();
-
-void set_line_buffering()
-{
-    setvbuf(stdout, NULL, _IOLBF, 0);
-    setvbuf(stderr, NULL, _IOLBF, 0);
-    setvbuf(stdin, NULL, _IOLBF, 0);
-}
+void free_tokens(char **tokens);
+void free_wr_list(wrapper **list);
 
 int main(void)
 {
@@ -64,32 +59,42 @@ int main(void)
     init_shell();
     /* Read data from a configuration file. */
     read_config_file();
+    /* Read data from the history file. */
+    load_history();
 
-    set_line_buffering();
     do
     {
-        /* Updating the prompts for dir and branch changes. */
+        /* Regular shell cycle. */
+
+        /* Updating the prompts for dir and branch changes.
+           In case the prompt is configured via .pshrc file.  */
         prompt1 = configure_prompt("PS1");
         prompt2 = configure_prompt("PS2");
 
-        /* Regular shell cycle. */
         if (prompt_type == 0)
             printf("%s", prompt1);
         else
             printf("%s", prompt2);
+
         read_line(line);
         line = trim(line);
+        /* Empty command check. */
         if (line[0] == '\0')
             continue;
+
+        /* Check if the provided line can be parsed. */
         tokenize(tokens, line);
         if ((check_status = check_tokens(tokens)) == 0)
         {
-            expand(tokens);
+            expand(tokens);       // perform various expansions
+            add_to_history(line); // manage history
+            cur_history = NULL;
             list = create_jobs(tokens);
             if (list == NULL)
                 continue;
             status = launch_jobs(list);
             do_job_notification();
+            free_wr_list(list);
             prompt_type = 0;
             line[0] = '\0';
         }
@@ -107,10 +112,30 @@ int main(void)
     } while (status);
 
     disable_raw_mode();
+    save_history();
+    free_env_list();
 
     free(line);
+    free_tokens(tokens);
     free(tokens);
     return 0;
+}
+
+void free_wr_list(wrapper **list)
+{
+    for (int i = 0; i < TOK_BUF_SIZE; i++)
+    {
+        if (list[i]->type == OPERATOR)
+            free(list[i]->oper);
+        free(list[i]);
+    }
+    free(list);
+}
+
+void free_tokens(char **tokens)
+{
+    for (int i = 0; i < TOK_BUF_SIZE; i++)
+        free(tokens[i]);
 }
 
 void disable_raw_mode()
@@ -129,8 +154,7 @@ void enable_raw_mode()
 void handle_sigwinch(int sig)
 {
     // Handle window size change if needed
-    my_printf("Signal caught!\n\r");
-    // fflush(stdout);
+    my_printf("Resize signal caught!\n\r");
 }
 
 void init_line_editing()
@@ -578,12 +602,6 @@ wrapper *create_oper_wrapper(char *str)
         exit(EXIT_FAILURE);
     }
     wr2->type = OPERATOR;
-    wr2->oper = malloc(TOK_BUF_SIZE * sizeof(char));
-    if (!wr2->oper)
-    {
-        my_fprintf(stderr, "psh: allocation error\n");
-        exit(EXIT_FAILURE);
-    }
     wr2->oper = strdup(str);
 
     return wr2;
@@ -778,6 +796,8 @@ void read_line(char *buffer)
     int cursor_pos = position;
     int c;
 
+    memset(buffer + position, '\0', BUF_SIZE - position);
+
     if (position != 0)
     {
         if (buffer[position - 1] == '\\')
@@ -911,11 +931,61 @@ void read_line(char *buffer)
                 c = getchar();
                 switch (c)
                 {
-                case 'A':
-                    my_printf("Up Arrow\n");
+                case 'A': // Up-Arrow
+                    if (!cur_history && last_history)
+                        cur_history = last_history;
+                    else if (cur_history && cur_history->prev)
+                        cur_history = cur_history->prev;
+                    else
+                        break;
+
+                    while (cursor_pos < position)
+                    {
+                        printf("%c", buffer[cursor_pos]);
+                        cursor_pos++;
+                    }
+                    while (cursor_pos > 0)
+                    {
+                        printf("\b \b");
+                        cursor_pos--;
+                    }
+                    memset(buffer, '\0', position);
+                    position = 0;
+
+                    strcpy(buffer, cur_history->line);
+                    printf("%s", buffer);
+
+                    position = strlen(buffer);
+                    cursor_pos = position;
                     break;
-                case 'B':
-                    my_printf("Down Arrow\n");
+                case 'B': // Down-Arrow
+                    if (cur_history && cur_history->next)
+                        cur_history = cur_history->next;
+                    else if (cur_history && !cur_history->next)
+                        cur_history = NULL;
+                    else
+                        break;
+                    while (cursor_pos < position)
+                    {
+                        printf("%c", buffer[cursor_pos]);
+                        cursor_pos++;
+                    }
+                    while (cursor_pos > 0)
+                    {
+                        printf("\b \b");
+                        cursor_pos--;
+                    }
+                    memset(buffer, '\0', position);
+                    position = 0;
+
+                    if (!cur_history)
+                        strcpy(buffer, "");
+                    else
+                        strcpy(buffer, cur_history->line);
+                    printf("%s", buffer);
+
+                    position = strlen(buffer);
+                    cursor_pos = position;
                     break;
                 case 'C':
                     if (cursor_pos < position)
@@ -945,6 +1015,8 @@ void tokenize(char **buffer, char *line)
     int in_quotes = 0;
     int len = strlen(line);
     char *token;
+    // char **buffer = malloc(TOK_BUF_SIZE * sizeof(char *));
+    
 
     for (int i = 0; i <= len; i++)
     {
@@ -1153,17 +1225,16 @@ void launch_job(job *j, int foreground)
     process *p;
     pid_t pid;
     int mypipe[2], infile, outfile;
-    char *prev_proc_outfile = (char *)malloc(TOK_BUF_SIZE);
-    if (!prev_proc_outfile)
-    {
-        my_fprintf(stderr, "psh: allocation error\n");
-        exit(EXIT_FAILURE);
-    }
+    char *prev_proc_outfile = NULL;
 
     infile = j->stdin;
     for (p = j->first_process; p; p = p->next)
     {
-        prev_proc_outfile = NULL;
+        if (prev_proc_outfile)
+        {
+            free(prev_proc_outfile);
+            prev_proc_outfile = NULL;
+        }
         if (p->outfile)
             prev_proc_outfile = strdup(p->outfile);
 
@@ -1216,6 +1287,8 @@ void launch_job(job *j, int foreground)
             infile = open(prev_proc_outfile, O_RDONLY);
         }
     }
+    if (prev_proc_outfile)
+        free(prev_proc_outfile);
 
     format_job_info(j, "launched");
 
@@ -1457,10 +1530,33 @@ void free_job(job *j)
     while (p != NULL)
     {
         process *next = p->next;
-        free(p->argv);
+
+        // Free each argument string in argv
+        if (p->argv)
+        {
+            for (char **arg = p->argv; *arg != NULL; ++arg)
+            {
+                free(*arg);
+            }
+            free(p->argv);
+        }
+
+        // Free infile, outfile, and errfile if they are not NULL
+        if (p->infile)
+            free(p->infile);
+        if (p->outfile)
+            free(p->outfile);
+        if (p->errfile)
+            free(p->errfile);
+
+        // Free the process structure itself
         free(p);
+
         p = next;
     }
-    free(j->command);
+
+    // Free the command string and the job structure itself
+    if (j->command)
+        free(j->command);
     free(j);
 }
