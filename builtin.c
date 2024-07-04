@@ -12,6 +12,7 @@
 extern job *first_job;
 extern Env *first_env;
 
+/* Change current directory. */
 int psh_cd(char **args)
 {
     if (args[1] == NULL)
@@ -28,6 +29,7 @@ int psh_cd(char **args)
     return 1;
 }
 
+/* Help command. */
 int psh_help(char **args)
 {
     int i;
@@ -42,6 +44,7 @@ int psh_help(char **args)
     return 1;
 }
 
+/* Exit the loop. */
 int psh_exit(char **args)
 {
     // send sighup to every job.
@@ -56,6 +59,7 @@ int psh_exit(char **args)
     return 0;
 }
 
+/* Print command history. */
 int psh_history(char **args)
 {
     print_history();
@@ -107,6 +111,7 @@ job *_find_last_stopped_job()
     return last_stopped;
 }
 
+/* List all currently running or stopped jobs. */
 int psh_jobs(char **args)
 {
     int counter = 1;
@@ -186,6 +191,7 @@ job *_find_job_by_index(int index)
     return NULL;
 }
 
+/* Bring a job to the foreground. */
 int psh_fg(char **args)
 {
     if (args[1] == NULL)
@@ -215,6 +221,7 @@ int psh_fg(char **args)
     return 1;
 }
 
+/* Bring a job to the background. */
 int psh_bg(char **args)
 {
     if (args[1] == NULL)
@@ -244,6 +251,8 @@ int psh_bg(char **args)
     return 1;
 }
 
+/* Update the list of environmental variables.
+   Can be used after the modification of the configuration file. */
 int psh_source(char **argv)
 {
     free_env_list();
@@ -251,6 +260,7 @@ int psh_source(char **argv)
     return 1;
 }
 
+/* Set an environmental variable. It exists until 'exit' is launched. */
 int psh_set(char **argv)
 {
     int elem_count = count_elem_in_list(argv);
@@ -282,6 +292,7 @@ int psh_set(char **argv)
     return 1;
 }
 
+/* Unset an environmental variable. */
 int psh_unset(char **argv)
 {
     int elem_count = count_elem_in_list(argv);
