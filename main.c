@@ -48,8 +48,8 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
-    char *prompt1;
-    char *prompt2;
+    char *prompt1 = NULL;
+    char *prompt2 = NULL;
     /* Make sure the shell is a foreground process. */
     init_shell();
     /* Read data from a configuration file. */
@@ -64,10 +64,10 @@ int main(void)
         /* Updating the prompts for dir and branch changes.
            In case the prompt is configured via .pshrc file.  */
         if (prompt_type == 0){
-            prompt1 = configure_prompt("PS1");
+            prompt1 = configure_prompt("PS1", prompt1);
             printf("%s", prompt1);
         } else {
-            prompt2 = configure_prompt("PS2");
+            prompt2 = configure_prompt("PS2", prompt2);
             printf("%s", prompt2);
         }
 
@@ -117,6 +117,8 @@ int main(void)
     save_history();
     free_env_list();
 
+    free(prompt1);
+    free(prompt2);
     free(line);
     return 0;
 }
