@@ -14,6 +14,7 @@
 #include <ctype.h>
 #include "custom_print.h"
 #include "history.h"
+#include "autocompletion.h"
 
 #define BUF_SIZE 1024
 #define TOK_BUF_SIZE 64
@@ -27,6 +28,7 @@ int last_proc_exit_status, inverted;
 Env *first_env = NULL;
 History *last_history = NULL;
 History *cur_history = NULL;
+int tab_count;
 
 void init_line_editing();
 void disable_raw_mode();
@@ -836,6 +838,12 @@ void read_line(char *buffer)
             buffer[position] = '\0';
             my_printf("\n");
             return;
+        }
+        else if (c == 9)
+        { // Handle tab
+            if (buffer[0] == '\0')
+                continue;
+            autocomplete(buffer, &position, &cursor_pos);
         }
         else if (c == 127)
         { // Handle backspace

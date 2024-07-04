@@ -1,0 +1,1 @@
+void autocomplete(char *buffer, int *position, int *cursor_pos);
