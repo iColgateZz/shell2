@@ -295,16 +295,19 @@ char *_parse_ps_var(char *var)
     return temp;
 }
 
-char *configure_prompt(char *env)
+char *configure_prompt(char *env, char *cur_prompt)
 {
-    char *temp = psh_getenv(env);
     char *def = "$ ";
     char *def2 = "> ";
-    if (!temp && strcmp(env, "PS1") == 0)
-        return def;
-    else if (!temp && strcmp(env, "PS2") == 0)
-        return def2;
 
+    if (cur_prompt != NULL)
+        free(cur_prompt);
+    char *temp = psh_getenv(env);
+
+    if (!temp && strcmp(env, "PS1") == 0)
+        return strdup(def);
+    else if (!temp && strcmp(env, "PS2") == 0)
+        return strdup(def2);
     char *var = strdup(temp);
 
     return _parse_ps_var(var);
