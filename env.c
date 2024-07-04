@@ -295,6 +295,9 @@ char *_parse_ps_var(char *var)
     return temp;
 }
 
+/* Configures the prompt. It is called at the beginning of the main loop
+   and is updated every time in case a user has a custom prompt that shows
+   the current directory and/or current git branch. */
 char *configure_prompt(char *env, char *cur_prompt)
 {
     char *def = "$ ";
@@ -713,6 +716,8 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
     free(token);
 }
 
+/* Check if any token in the list can be expanded and
+   perform the expansion in case it is possible.*/
 void expand(char **tokens)
 {
     for (int i = 0; tokens[i] != NULL; i++)
@@ -728,6 +733,7 @@ void expand(char **tokens)
     }
 }
 
+/* Free the list of environmental variables. */
 void free_env_list()
 {
     Env *temp = first_env;

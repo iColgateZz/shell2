@@ -99,13 +99,13 @@ int main(void)
             free_tokens(tokens);
         }
         else if (check_status == 1)
-        {
+        { // Case when line continuation is needed.
             prompt_type = 1;
             free_tokens(tokens);
             continue;
         }
         else
-        {
+        { // Syntax error occured. 
             line[0] = '\0';
             prompt_type = 0;
             free_tokens(tokens);
@@ -113,7 +113,8 @@ int main(void)
         }
     } while (status);
 
-    disable_raw_mode();
+    if (shell_is_interactive)
+        disable_raw_mode();
     save_history();
     free_env_list();
 
@@ -123,6 +124,7 @@ int main(void)
     return 0;
 }
 
+/* Free the wrapper list. */
 void free_wr_list(wrapper **list)
 {
     for (int i = 0; list[i] != NULL; i++)
@@ -134,6 +136,7 @@ void free_wr_list(wrapper **list)
     free(list);
 }
 
+/* Free the token list. */
 void free_tokens(char **tokens)
 {
     for (int i = 0; tokens[i] != NULL; i++)
@@ -143,11 +146,14 @@ void free_tokens(char **tokens)
     free(tokens);
 }
 
+/* Restore original terminal modes. */
 void disable_raw_mode()
 {
     tcsetattr(shell_terminal, TCSAFLUSH, &shell_tmodes);
 }
 
+/* Make a copy of the terminal modes of the original shell. Make the copy raw 
+   and set it as the current terminal mode. */
 void enable_raw_mode()
 {
     atexit(disable_raw_mode);
@@ -156,18 +162,21 @@ void enable_raw_mode()
     tcsetattr(shell_terminal, TCSAFLUSH, &raw);
 }
 
+/* SIGWINCH signal handler. */
 void handle_sigwinch(int sig)
 {
     // Handle window size change if needed
     my_printf("Resize signal caught!\n\r");
 }
 
+/* Enable raw mode and set up a SIGWINCH signal listener. */
 void init_line_editing()
 {
     enable_raw_mode();
     signal(SIGWINCH, handle_sigwinch);
 }
 
+/* Categorize the tokens for the later syntax check. */
 int *categorize_tokens(char **tokens)
 {
     int arr[TOK_BUF_SIZE];
@@ -231,7 +240,8 @@ int *categorize_tokens(char **tokens)
     return arr;
 }
 
-/* Return 1 if line continuation is needed, -1 if error occured, 0 - success. */
+/* Check if the provided tokens make sense syntactically. 
+   Return 1 if line continuation is needed, -1 if error occured, 0 - success. */
 int check_tokens(char **tokens)
 {
     int *arr = categorize_tokens(tokens);
@@ -482,6 +492,7 @@ int check_tokens(char **tokens)
     return 0;
 }
 
+/* Function used for debugging. */
 void print_list(wrapper **list)
 {
     for (int i = 0; list[i] != NULL; i++)
@@ -512,6 +523,7 @@ void print_list(wrapper **list)
     }
 }
 
+/* Launch jobs sequentially. Store the exit status of perfomed job. */
 int launch_jobs(wrapper **list)
 {
     int first = 1, status = 1;
@@ -576,12 +588,11 @@ int launch_jobs(wrapper **list)
                 }
             }
         }
-        my_printf("\r");
-        // fflush(stdout);
     }
     return status;
 }
 
+/* Create a wrapper for a job. */
 wrapper *create_job_wrapper(char **tokens, int start, int end)
 {
     wrapper *wr = malloc(sizeof(wrapper));
@@ -598,6 +609,7 @@ wrapper *create_job_wrapper(char **tokens, int start, int end)
     return wr;
 }
 
+/* Create a wrapper for an operator. */
 wrapper *create_oper_wrapper(char *str)
 {
     wrapper *wr2 = malloc(sizeof(wrapper));
@@ -612,6 +624,7 @@ wrapper *create_oper_wrapper(char *str)
     return wr2;
 }
 
+/* Create a list of wrapper structs. */
 wrapper **create_jobs(char **tokens)
 {
     int start = 0, end = 0, position = 0;
@@ -670,6 +683,7 @@ wrapper **create_jobs(char **tokens)
     return list;
 }
 
+/* Create a job struct. */
 job *create_job(char **tokens, int start, int end)
 {
     if (tokens[start] == NULL)
@@ -795,6 +809,8 @@ job *create_job(char **tokens, int start, int end)
     return j;
 }
 
+/* Read the line entered by the user. If the shell is used interactively,
+   the terminal enters raw mode. Handle shortcuts, character insertion, and deletion. */
 void read_line(char *buffer)
 {
     int position = strlen(buffer);
@@ -1013,6 +1029,7 @@ void read_line(char *buffer)
     }
 }
 
+/* Tokenize the provided string. */
 char **tokenize(char *line)
 {
     int position = 0;
@@ -1143,6 +1160,7 @@ void init_shell()
     }
 }
 
+/* Launch the provided process P. */
 void launch_process(process *p, pid_t pgid,
                     int infile, int outfile, int errfile,
                     int foreground)
@@ -1231,6 +1249,7 @@ void launch_process(process *p, pid_t pgid,
     exit(1);
 }
 
+/* Launch the job J. */
 void launch_job(job *j, int foreground)
 {
     process *p;
@@ -1292,6 +1311,8 @@ void launch_job(job *j, int foreground)
         if (outfile != j->stdout)
             close(outfile);
         infile = mypipe[0];
+
+        /* Reassign the infile in case previous process had a non-default outfile. */
         if (prev_proc_outfile)
         {
             close(infile);
@@ -1456,8 +1477,7 @@ void wait_for_job(job *j)
 /* Format information about job status for the user to look at.  */
 void format_job_info(job *j, const char *status)
 {
-    my_fprintf(stderr, "%ld (%s): %s\n", (long)j->pgid, status, j->command);
-    // fflush(stderr);
+    // my_fprintf(stderr, "%ld (%s): %s\n", (long)j->pgid, status, j->command);
 }
 
 /* Notify the user about stopped or terminated jobs.

@@ -24,6 +24,7 @@ int _count_history_size()
     return counter;
 }
 
+/* Free the linked list with history structs. */
 void free_history()
 {
     History *temp;
@@ -37,6 +38,7 @@ void free_history()
     }
 }
 
+/* Load the history from the file. */
 void load_history()
 {
     FILE *file = fopen(HISTORY_FILE, "r");
@@ -64,6 +66,7 @@ void load_history()
     }
 }
 
+/* Save the history to the file. */
 void save_history()
 {
     FILE *file = fopen(HISTORY_FILE, "w");
@@ -81,6 +84,7 @@ void save_history()
     free_history();
 }
 
+/* Add a command to the history. */
 void add_to_history(const char *command)
 {
     short int count = _count_history_size();
@@ -107,6 +111,8 @@ void add_to_history(const char *command)
     last_history->next = new;
     last_history = new;
 }
+
+/* List all command in the command history. */
 void print_history()
 {
     History *temp = first_history;
