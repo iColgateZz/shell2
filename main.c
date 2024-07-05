@@ -28,11 +28,10 @@ int last_proc_exit_status, inverted;
 Env *first_env = NULL;
 History *last_history = NULL;
 History *cur_history = NULL;
-int tab_count;
+int tab_count = -1;
 
 void init_line_editing();
 void disable_raw_mode();
-void free_tokens(char **tokens);
 void free_wr_list(wrapper **list);
 
 int main(void)
@@ -120,6 +119,8 @@ int main(void)
     save_history();
     free_env_list();
 
+    free_token_to_complete();
+    free_possible_completions();
     free(prompt1);
     free(prompt2);
     free(line);
@@ -141,6 +142,8 @@ void free_wr_list(wrapper **list)
 /* Free the token list. */
 void free_tokens(char **tokens)
 {
+    if (!tokens)
+        return;
     for (int i = 0; tokens[i] != NULL; i++)
     {
         free(tokens[i]);
@@ -217,6 +220,12 @@ int *categorize_tokens(char **tokens)
                 arr[pos++] = REDIRECTION;
             else if (isOperator(tokens[i]))
             {
+                arr[pos++] = OPER;
+                first = 1;
+            }
+            else if (endsWith(tokens[i], ';'))
+            {
+                arr[pos++] = ARG;
                 arr[pos++] = OPER;
                 first = 1;
             }
@@ -832,6 +841,10 @@ void read_line(char *buffer)
     while (1)
     {
         c = getchar();
+        if (c == 9)
+            tab_count++;
+        else
+            tab_count = -1;
 
         if (c == '\n' || c == '\r')
         {

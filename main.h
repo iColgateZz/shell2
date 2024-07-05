@@ -63,3 +63,5 @@ int launch_jobs(wrapper **list);
 void print_list(wrapper **list);
 int execute(job *j, int foreground);
 int check_tokens(char **tokens);
+int *categorize_tokens(char **tokens);
+void free_tokens(char **tokens);
