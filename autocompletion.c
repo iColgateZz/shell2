@@ -59,6 +59,11 @@ int cursor_on_token_with_index(char *buffer, int *position, int *cursor_pos, int
                     return tok_counter;
                 }
             }
+            else if (start == end && i == *cursor_pos)
+            {
+                *tok_start = start;
+                return -2;
+            }
             start = i + 1;
         }
     }
@@ -125,12 +130,14 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
         else
             tok_category = ARG;
     }
+    else if (token_index == -2)
+        tok_category = ARG;
     else
         tok_category = categories[token_index];
 
     if (tab_count == 0)
     {
-        char *token = token_index == -1 ? strdup("") : strdup(tokens[token_index]);
+        char *token = token_index == -1 || token_index == -2 ? strdup("") : strdup(tokens[token_index]);
         token_to_complete = append_star(token);
         word_start = tok_start;
         if (word_start == -1)
@@ -154,7 +161,10 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
         return;
     }
 
-    // my_printf("Tok start is %d\n", word_start);
+    my_printf("\nTok start is %d\n", word_start);
+    my_printf("Token to complete is %s\n", token_to_complete);
+    my_printf("Tok category is %d\n", tok_category);
+    my_printf("Tab count is %d\n", tab_count);
     if (possible_completions != NULL)
     {
         int completion_count = 0;
@@ -178,11 +188,14 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
         strncpy(suffix, &buffer[word_start + delete_len], suffix_len);
         suffix[suffix_len] = '\0';
 
-        for (int i = *cursor_pos; i < *position; i++)
-            printf(" ");
+        for (int i = *cursor_pos; i > 0; i--)
+            printf("\b");
 
-        for (int i = 0; i < *position; i++)
-            printf("\b \b");
+        for (int i = 0; i < prefix_len + delete_len + suffix_len; i++)
+            printf(" ");
+        
+        for (int i = prefix_len + delete_len + suffix_len; i > 0; i--)
+            printf("\b");
 
         snprintf(buffer, 1024, "%s%s%s", prefix, word_to_insert, suffix);
 
