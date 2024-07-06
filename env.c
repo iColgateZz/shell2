@@ -183,7 +183,7 @@ char *_get_current_dir()
 {
     FILE *fp;
     char path[MAX_PROMPT_LEN];
-
+    
     fp = popen("pwd", "r");
     if (fp == NULL)
     {
@@ -204,6 +204,9 @@ char *_get_current_dir()
         last = temp;
         temp = strtok(NULL, "/");
     }
+
+    if (!last)
+        last = "/";
 
     char *result = strdup(last);
     if (!result)

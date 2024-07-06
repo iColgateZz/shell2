@@ -100,9 +100,9 @@ int main(void)
             do_job_notification();
             prompt_type = 0;
             line[0] = '\0';
-
-            free_wr_list(list);
-            free_tokens(tokens);
+            
+            free_wr_list(list); 
+            free_tokens(tokens); 
         }
         else if (check_status == 1)
         { // Case when line continuation is needed.
