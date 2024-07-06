@@ -70,6 +70,8 @@ int cursor_on_token_with_index(char *buffer, int *position, int *cursor_pos, int
             }
             start = i + 1;
         }
+        if (i > 0 && !isspace(buffer[i]) && buffer[i] == ';')
+            tok_counter++;
     }
     if (buffer[start] != '\0')
     {
@@ -223,6 +225,8 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
         else
             tok_category = categories[token_index];
 
+        // my_printf("index %d\n", token_index);
+
         char *token = token_index == -1 || token_index == -2 ? strdup("") : strdup(tokens[token_index]);
         token_to_complete = append_star(token);
         word_start = tok_start;
@@ -230,6 +234,12 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
             word_start = *position;
         real_tok_category = tok_category;
     }
+
+    // my_printf("\n");
+    // my_printf("token %s\n", token_to_complete);
+    // my_printf("word start %d\n", word_start);
+    // my_printf("tok category %d\n", real_tok_category);
+    // my_printf("tab_co %d\n", tab_count);
 
     /* Perform expansions ... */
     if (real_tok_category == 0)

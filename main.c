@@ -64,10 +64,13 @@ int main(void)
 
         /* Updating the prompts for dir and branch changes.
            In case the prompt is configured via .pshrc file.  */
-        if (prompt_type == 0){
+        if (prompt_type == 0)
+        {
             prompt1 = configure_prompt("PS1", prompt1);
             printf("%s", prompt1);
-        } else {
+        }
+        else
+        {
             prompt2 = configure_prompt("PS2", prompt2);
             printf("%s", prompt2);
         }
@@ -78,13 +81,15 @@ int main(void)
         if (line[0] == '\0')
             continue;
 
+        /* Manage history. */
+        add_to_history(line);
+        cur_history = NULL;
+
         /* Check if the provided line can be parsed. */
         tokens = tokenize(line);
         if ((check_status = check_tokens(tokens)) == 0)
         {
-            expand(tokens);       // perform various expansions
-            add_to_history(line); // manage history
-            cur_history = NULL;
+            expand(tokens); // perform various expansions
             list = create_jobs(tokens);
             if (list == NULL)
             {
@@ -106,7 +111,7 @@ int main(void)
             continue;
         }
         else
-        { // Syntax error occured. 
+        { // Syntax error occured.
             line[0] = '\0';
             prompt_type = 0;
             free_tokens(tokens);
@@ -157,7 +162,7 @@ void disable_raw_mode()
     tcsetattr(shell_terminal, TCSAFLUSH, &shell_tmodes);
 }
 
-/* Make a copy of the terminal modes of the original shell. Make the copy raw 
+/* Make a copy of the terminal modes of the original shell. Make the copy raw
    and set it as the current terminal mode. */
 void enable_raw_mode()
 {
@@ -225,6 +230,10 @@ int *categorize_tokens(char **tokens)
             }
             else if (endsWith(tokens[i], ';'))
             {
+                if (first)
+                    arr[pos++] = CMD;
+                else
+                    arr[pos++] = ARG;
                 arr[pos++] = OPER;
                 first = 1;
             }
@@ -250,7 +259,7 @@ int *categorize_tokens(char **tokens)
     return arr;
 }
 
-/* Check if the provided tokens make sense syntactically. 
+/* Check if the provided tokens make sense syntactically.
    Return 1 if line continuation is needed, -1 if error occured, 0 - success. */
 int check_tokens(char **tokens)
 {
@@ -899,7 +908,7 @@ void read_line(char *buffer)
             {
                 free(buf_copy);
                 continue;
-            }   
+            }
             autocomplete(buffer, &position, &cursor_pos);
             free(buf_copy);
         }
@@ -1109,7 +1118,6 @@ char **tokenize(char *line)
         my_fprintf(stderr, "psh: allocation error\n");
         exit(EXIT_FAILURE);
     }
-    
 
     for (int i = 0; i <= len; i++)
     {
@@ -1126,6 +1134,16 @@ char **tokenize(char *line)
             }
             start = i + 1;
         }
+        else if (line[i] == ';' && !in_quotes)
+        {
+            if (i > start)
+            {
+                token = strndup(line + start, i - start);
+                buffer[position++] = token;
+            }
+            buffer[position++] = strndup(";", 1);
+            start = i + 1;
+        }
         else if (line[i] == '\0')
         {
             if (i > start)
@@ -1135,7 +1153,7 @@ char **tokenize(char *line)
             }
         }
     }
-    
+
     buffer[position] = NULL;
     return buffer;
 }

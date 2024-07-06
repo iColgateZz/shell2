@@ -646,7 +646,6 @@ void _handle_curly_brace_expansion(char **tokens, char *token, int index)
         while (tokens[original_count] != NULL)
             original_count++;
 
-        // tokens = realloc(tokens, sizeof(char *) * (original_count + new_token_count));
         memmove(&tokens[index + new_token_count], &tokens[index + 1], sizeof(char *) * (original_count - index));
 
         for (int i = 0; i < new_token_count; i++)
@@ -675,7 +674,6 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
     if (ret != 0)
     {
         globfree(&glob_result);
-        my_fprintf(stderr, "Glob error: %d\n", ret);
         return;
     }
 
@@ -683,14 +681,6 @@ void _handle_glob_expansion(char **tokens, char *token, int index)
     int original_count = 0;
     while (tokens[original_count] != NULL)
         original_count++;
-
-    tokens = realloc(tokens, sizeof(char *) * (original_count + num_matches));
-    if (!tokens)
-    {
-        globfree(&glob_result);
-        my_fprintf(stderr, "Memory allocation error\n");
-        return;
-    }
 
     memmove(&tokens[index + num_matches], &tokens[index + 1], sizeof(char *) * (original_count - index));
 
