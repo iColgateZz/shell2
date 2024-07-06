@@ -603,9 +603,9 @@ void _handle_curly_brace_expansion(char **tokens, char *token, int index)
     strncpy(suffix, end + 1, strlen(end + 1));
     strncpy(content, start + 1, end - start - 1);
 
-    // printf("Prefix is %s\n", prefix);
-    // printf("Conten is %s\n", content);
-    // printf("Suffix is %s\n", suffix);
+    // my_printf("Prefix is %s\n", prefix);
+    // my_printf("Conten is %s\n", content);
+    // my_printf("Suffix is %s\n", suffix);
 
     char **new_tokens = NULL;
     int new_token_count = 0;
@@ -646,14 +646,11 @@ void _handle_curly_brace_expansion(char **tokens, char *token, int index)
         while (tokens[original_count] != NULL)
             original_count++;
 
-        tokens = realloc(tokens, sizeof(char *) * (original_count + new_token_count));
+        // tokens = realloc(tokens, sizeof(char *) * (original_count + new_token_count));
         memmove(&tokens[index + new_token_count], &tokens[index + 1], sizeof(char *) * (original_count - index));
 
         for (int i = 0; i < new_token_count; i++)
-        {
             tokens[index + i] = new_tokens[i];
-        }
-
         free(new_tokens);
     }
     free(token);

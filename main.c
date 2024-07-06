@@ -14,9 +14,10 @@
 #include <ctype.h>
 #include "custom_print.h"
 #include "history.h"
+#include "autocompletion.h"
 
-#define BUF_SIZE 1024
-#define TOK_BUF_SIZE 64
+#define BUF_SIZE 2048
+#define TOK_BUF_SIZE 256
 
 pid_t shell_pgid;
 struct termios shell_tmodes, raw;
@@ -27,10 +28,10 @@ int last_proc_exit_status, inverted;
 Env *first_env = NULL;
 History *last_history = NULL;
 History *cur_history = NULL;
+int tab_count = -1;
 
 void init_line_editing();
 void disable_raw_mode();
-void free_tokens(char **tokens);
 void free_wr_list(wrapper **list);
 
 int main(void)
@@ -118,6 +119,8 @@ int main(void)
     save_history();
     free_env_list();
 
+    free_token_to_complete();
+    free_possible_completions();
     free(prompt1);
     free(prompt2);
     free(line);
@@ -139,6 +142,8 @@ void free_wr_list(wrapper **list)
 /* Free the token list. */
 void free_tokens(char **tokens)
 {
+    if (!tokens)
+        return;
     for (int i = 0; tokens[i] != NULL; i++)
     {
         free(tokens[i]);
@@ -179,7 +184,7 @@ void init_line_editing()
 /* Categorize the tokens for the later syntax check. */
 int *categorize_tokens(char **tokens)
 {
-    int arr[TOK_BUF_SIZE];
+    int *arr = malloc(TOK_BUF_SIZE * sizeof(int));
     int pos = 0, first = 1;
     for (int i = 0; tokens[i] != NULL; i++)
     {
@@ -214,6 +219,11 @@ int *categorize_tokens(char **tokens)
             if (isRedirection(tokens[i]))
                 arr[pos++] = REDIRECTION;
             else if (isOperator(tokens[i]))
+            {
+                arr[pos++] = OPER;
+                first = 1;
+            }
+            else if (endsWith(tokens[i], ';'))
             {
                 arr[pos++] = OPER;
                 first = 1;
@@ -260,10 +270,14 @@ int check_tokens(char **tokens)
                     continue;
                 }
                 else if (next_token == LINE_CONTINUATION)
+                {
+                    free(arr);
                     return 1;
+                }
                 else
                 {
                     my_perror("Wrong after '!'");
+                    free(arr);
                     return -1;
                 }
             }
@@ -276,6 +290,7 @@ int check_tokens(char **tokens)
             else
             {
                 my_perror("Wrong first word!");
+                free(arr);
                 return -1;
             }
         }
@@ -295,6 +310,7 @@ int check_tokens(char **tokens)
                 else
                 {
                     my_perror("Wrong after ARG!");
+                    free(arr);
                     return -1;
                 }
             }
@@ -313,12 +329,14 @@ int check_tokens(char **tokens)
                 else
                 {
                     my_perror("Wrong after ARG2!");
+                    free(arr);
                     return -1;
                 }
             }
             else
             {
                 my_perror("Weird error 1!");
+                free(arr);
                 return -1;
             }
 
@@ -336,16 +354,21 @@ int check_tokens(char **tokens)
                 }
                 else if (next_token == END ||
                          next_token == LINE_CONTINUATION)
+                {
+                    free(arr);
                     return 1;
+                }
                 else
                 {
                     my_perror("Wrong after PIPE!");
+                    free(arr);
                     return -1;
                 }
             }
             else
             {
                 my_perror("Weird error 2!");
+                free(arr);
                 return -1;
             }
 
@@ -362,16 +385,21 @@ int check_tokens(char **tokens)
                 }
                 else if (next_token == END ||
                          next_token == LINE_CONTINUATION)
+                {
+                    free(arr);
                     return 1;
+                }
                 else
                 {
                     my_perror("Wrong after REDIRECTION!");
+                    free(arr);
                     return -1;
                 }
             }
             else
             {
                 my_perror("Weird error 3!");
+                free(arr);
                 return -1;
             }
 
@@ -389,25 +417,34 @@ int check_tokens(char **tokens)
                 }
                 else if (next_token == END ||
                          next_token == LINE_CONTINUATION)
+                {
+                    free(arr);
                     return 1;
+                }
                 else
                 {
                     my_perror("Wrong after OPERATOR!");
+                    free(arr);
                     return -1;
                 }
             }
             else
             {
                 my_perror("Weird error 4!");
+                free(arr);
                 return -1;
             }
 
         case LINE_CONTINUATION:
             if (next_token == END)
+            {
+                free(arr);
                 return 1;
+            }
             else
             {
                 my_perror("Wrong after LINE_CONT!");
+                free(arr);
                 return -1;
             }
 
@@ -425,16 +462,21 @@ int check_tokens(char **tokens)
                 }
                 else if (next_token == END ||
                          next_token == LINE_CONTINUATION)
+                {
+                    free(arr);
                     return 1;
+                }
                 else
                 {
                     my_perror("Wrong after QUOTE!");
+                    free(arr);
                     return -1;
                 }
             }
             else
             {
                 my_perror("Weird error 5!");
+                free(arr);
                 return -1;
             }
 
@@ -452,12 +494,14 @@ int check_tokens(char **tokens)
                 else
                 {
                     my_perror("Wrong after QUOTE!");
+                    free(arr);
                     return -1;
                 }
             }
             else
             {
                 my_perror("Weird error 6!");
+                free(arr);
                 return -1;
             }
 
@@ -475,20 +519,26 @@ int check_tokens(char **tokens)
                     break;
                 }
                 else if (next_token == LINE_CONTINUATION)
+                {
+                    free(arr);
                     return 1;
+                }
                 else
                 {
                     my_perror("Wrong after BG_OPER!");
+                    free(arr);
                     return -1;
                 }
             }
             else
             {
                 my_perror("Weird error 7!");
+                free(arr);
                 return -1;
             }
         }
     }
+    free(arr);
     return 0;
 }
 
@@ -830,12 +880,28 @@ void read_line(char *buffer)
     while (1)
     {
         c = getchar();
+        if (c == 9)
+            tab_count++;
+        else
+            tab_count = -1;
 
         if (c == '\n' || c == '\r')
         {
             buffer[position] = '\0';
             my_printf("\n");
             return;
+        }
+        else if (c == 9)
+        { // Handle tab
+            char *buf_copy = strdup(buffer);
+            buf_copy = trim(buf_copy);
+            if (buf_copy[0] == '\0')
+            {
+                free(buf_copy);
+                continue;
+            }   
+            autocomplete(buffer, &position, &cursor_pos);
+            free(buf_copy);
         }
         else if (c == 127)
         { // Handle backspace
