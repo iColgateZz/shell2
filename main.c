@@ -816,18 +816,18 @@ job *create_job(char **tokens, int start, int end)
                     {
                         if (strcmp(tokens[j], ">") == 0)
                         {
-                            p->outfile = tokens[j + 1];
+                            p->outfile = strdup(tokens[j + 1]);
                             p->append_mode = 0;
                         }
                         else if (strcmp(tokens[j], ">>") == 0)
                         {
-                            p->outfile = tokens[j + 1];
+                            p->outfile = strdup(tokens[j + 1]);
                             p->append_mode = 1;
                         }
                         else if (strcmp(tokens[j], "<") == 0)
-                            p->infile = tokens[j + 1];
+                            p->infile = strdup(tokens[j + 1]);
                         else if (strcmp(tokens[j], "2>") == 0)
-                            p->errfile = tokens[j + 1];
+                            p->errfile = strdup(tokens[j + 1]);
                         j++;
                     }
                     else
@@ -1393,14 +1393,15 @@ void launch_job(job *j, int foreground)
         if (infile != j->stdin)
             close(infile);
         if (outfile != j->stdout)
-            close(outfile);
+           close(outfile);
         infile = mypipe[0];
 
         /* Reassign the infile in case previous process had a non-default outfile. */
         if (prev_proc_outfile)
         {
             close(infile);
-            infile = open(prev_proc_outfile, O_RDONLY);
+            if (p->next)
+                p->next->infile = strdup(prev_proc_outfile);
         }
     }
     if (prev_proc_outfile)
@@ -1655,6 +1656,12 @@ void free_job(job *j)
             }
             free(p->argv);
         }
+        if (p->infile)
+            free(p->infile);
+        if (p->outfile)
+            free(p->outfile);
+        if (p->errfile)
+            free(p->errfile);
 
         // Free the process structure itself
         free(p);

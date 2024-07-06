@@ -81,6 +81,10 @@ set commands {
     "echo \}\{"
     "echo {qweasd......}"
     "echo {123qwe}"
+    "! pwd | ls -al | grep a ||     echo haha | cat"
+    "! pwd | ls -al || echo haha"
+    "echo ~/$USER/{3..1}{abc,def}"
+    "echo p{3..2}{2..5}{ab}s"
     "find . -type f -iname \"*.c\" -print0 | xargs -0 cat | wc -l"
 }
 
@@ -97,10 +101,6 @@ set commands {
 #    "echo \"prefix{1..a}suffix\""
 #    "echo \"prefix{a,b,c}suffix\""
 #    "echo \"prefix{1..10}suffix\""
-#    "echo p{3..2}{2..5}{ab}s"
-#    "echo ~/$USER/{3..1}{abc,def}"
-#    "! pwd | ls -al | grep a ||     echo haha | cat"
-#    "! pwd | ls -al || echo haha"
 
 # Open files for writing outputs
 set real_shell_file [open "out/real_shell_output.txt" "w"]
