@@ -54,7 +54,6 @@ set commands {
     "pwd | cat | cat | cat | cat"
     "pwd | ls -al | grep a | wc -l"
     "pwd | ls -al && echo haha"
-    "! pwd | ls -al || echo haha"
     "echo \"hello world\" | tr 'a-z' 'A-Z'"
     "find . -type f | wc -l"
     "echo \"\" | wc -l"
@@ -101,6 +100,7 @@ set commands {
 #    "echo p{3..2}{2..5}{ab}s"
 #    "echo ~/$USER/{3..1}{abc,def}"
 #    "! pwd | ls -al | grep a ||     echo haha | cat"
+#    "! pwd | ls -al || echo haha"
 
 # Open files for writing outputs
 set real_shell_file [open "out/real_shell_output.txt" "w"]

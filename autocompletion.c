@@ -7,13 +7,17 @@
 #include "helpers.h"
 #include <ctype.h>
 #include <glob.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <libgen.h>
 
-#define TOK_BUF_SIZE 64
+#define TOK_BUF_SIZE 256
 
 extern int tab_count;
 char *token_to_complete = NULL;
 int word_start = -1;
 char **possible_completions = NULL;
+int real_tok_category = 0;
 
 void free_token_to_complete()
 {
@@ -79,7 +83,7 @@ int cursor_on_token_with_index(char *buffer, int *position, int *cursor_pos, int
 char **create_argv(char *token)
 {
     glob_t glob_result;
-    int ret = glob(token, GLOB_TILDE, NULL, &glob_result);
+    int ret = glob(token, GLOB_TILDE | GLOB_MARK, NULL, &glob_result);
     if (ret != 0)
     {
         globfree(&glob_result);
@@ -102,6 +106,89 @@ char **create_argv(char *token)
     return list;
 }
 
+int path_exists(const char *path)
+{
+    struct stat path_stat;
+    return (stat(path, &path_stat) == 0);
+}
+
+char **get_path_directories()
+{
+    char *path_env = getenv("PATH");
+    if (!path_env)
+        return NULL;
+    int count = 1;
+    for (char *p = path_env; *p; p++)
+    {
+        if (*p == ':')
+            count++;
+    }
+    char **directories = malloc((count + 1) * sizeof(char *));
+    if (!directories)
+    {
+        perror("malloc");
+        return NULL;
+    }
+    char *path_copy = strdup(path_env);
+    char *token = strtok(path_copy, ":");
+    int i = 0;
+    while (token)
+    {
+        if (path_exists(token))
+            directories[i++] = strdup(token);
+        token = strtok(NULL, ":");
+    }
+    directories[i] = NULL;
+    free(path_copy);
+    return directories;
+}
+
+void free_directories(char **dir)
+{
+    if (!dir)
+        return;
+    for (int i = 0; dir[i] != NULL; i++)
+        free(dir[i]);
+    free(dir);
+}
+
+char **create_cmd_argv(const char *pattern)
+{
+    char **directories = get_path_directories();
+    if (!directories)
+    {
+        return NULL;
+    }
+    glob_t globbuf;
+    memset(&globbuf, 0, sizeof(globbuf));
+
+    for (int i = 0; directories[i] != NULL; i++)
+    {
+        char glob_pattern[1024];
+        snprintf(glob_pattern, sizeof(glob_pattern), "%s/%s", directories[i], pattern);
+        int ret = glob(glob_pattern, GLOB_APPEND, NULL, &globbuf);
+        if (ret != 0 && ret != GLOB_NOMATCH)
+        {
+            perror("glob");
+            globfree(&globbuf);
+            return NULL;
+        }
+    }
+    char **results = malloc((globbuf.gl_pathc + 1) * sizeof(char *));
+    if (!results)
+    {
+        perror("malloc");
+        globfree(&globbuf);
+        return NULL;
+    }
+    for (size_t i = 0; i < globbuf.gl_pathc; i++)
+        results[i] = strdup(basename(globbuf.gl_pathv[i]));
+    results[globbuf.gl_pathc] = NULL;
+    globfree(&globbuf);
+    free_directories(directories);
+    return results;
+}
+
 void autocomplete(char *buffer, int *position, int *cursor_pos)
 {
     if (token_to_complete && tab_count == 0)
@@ -109,47 +196,49 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
         free_tokens(possible_completions);
         free(token_to_complete);
     }
-
     char **tokens = tokenize(buffer);
     int *categories = categorize_tokens(tokens);
 
-    int tok_start = -1, tok_end = -1;
-    int token_index = cursor_on_token_with_index(buffer, position, cursor_pos, &tok_start, &tok_end);
-    int tok_category;
-    if (token_index == -1)
-    {
-        int last_category;
-        for (int i = 0; categories[i] != END; i++)
-            last_category = categories[i];
-        if (last_category == BG_OPER ||
-            last_category == INVERSION ||
-            last_category == PIPE ||
-            last_category == OPER ||
-            last_category == LINE_CONTINUATION)
-            tok_category = CMD;
-        else
-            tok_category = ARG;
-    }
-    else if (token_index == -2)
-        tok_category = ARG;
-    else
-        tok_category = categories[token_index];
-
     if (tab_count == 0)
     {
+        int tok_start = -1, tok_end = -1;
+        int token_index = cursor_on_token_with_index(buffer, position, cursor_pos, &tok_start, &tok_end);
+        int tok_category;
+        if (token_index == -1)
+        {
+            int last_category;
+            for (int i = 0; categories[i] != END; i++)
+                last_category = categories[i];
+            if (last_category == BG_OPER ||
+                last_category == INVERSION ||
+                last_category == PIPE ||
+                last_category == OPER ||
+                last_category == LINE_CONTINUATION)
+                tok_category = CMD;
+            else
+                tok_category = ARG;
+        }
+        else if (token_index == -2)
+            tok_category = ARG;
+        else
+            tok_category = categories[token_index];
+
         char *token = token_index == -1 || token_index == -2 ? strdup("") : strdup(tokens[token_index]);
         token_to_complete = append_star(token);
         word_start = tok_start;
         if (word_start == -1)
             word_start = *position;
+        real_tok_category = tok_category;
     }
 
     /* Perform expansions ... */
-    if (tok_category == 0)
+    if (real_tok_category == 0)
     {
         /* cmd autocomplete */
+        if (tab_count == 0)
+            possible_completions = create_cmd_argv(token_to_complete);
     }
-    else if (tok_category == 1)
+    else if (real_tok_category == 1)
     {
         /* arg autocomplete */
         if (tab_count == 0)
@@ -157,15 +246,12 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
     }
     else
     {
+        free(categories);
         free_tokens(tokens);
         return;
     }
 
-    my_printf("\nTok start is %d\n", word_start);
-    my_printf("Token to complete is %s\n", token_to_complete);
-    my_printf("Tok category is %d\n", tok_category);
-    my_printf("Tab count is %d\n", tab_count);
-    if (possible_completions != NULL)
+    if (possible_completions != NULL && possible_completions[0] != NULL)
     {
         int completion_count = 0;
         for (int i = 0; possible_completions[i] != NULL; i++)
@@ -193,7 +279,7 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
 
         for (int i = 0; i < prefix_len + delete_len + suffix_len; i++)
             printf(" ");
-        
+
         for (int i = prefix_len + delete_len + suffix_len; i > 0; i--)
             printf("\b");
 
@@ -208,5 +294,6 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
     }
 
     free_tokens(tokens);
+    free(categories);
     return;
 }
