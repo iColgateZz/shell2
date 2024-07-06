@@ -663,7 +663,10 @@ wrapper *create_job_wrapper(char **tokens, int start, int end)
     wr->type = JOB;
     wr->j = create_job(tokens, start, end);
     if (wr->j == NULL)
+    {
+        free(wr);
         return NULL;
+    }
 
     return wr;
 }
@@ -843,7 +846,10 @@ job *create_job(char **tokens, int start, int end)
                 j->in_bg = 1;
                 size_t len = strlen(p->argv[position - 1]);
                 if (len == 1)
+                {
+                    free(p->argv[position - 1]);
                     p->argv[position - 1] = NULL;
+                }
                 else
                 {
                     p->argv[position - 1][len - 1] = ' ';
