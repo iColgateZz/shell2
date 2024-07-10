@@ -5,3 +5,4 @@ char *trim(char *str);
 char *concat_line(char **tokens, int start, int end);
 int containsChar(char *word, char c);
 int count_elem_in_list(char **list);
+int startsWith(const char *str, const char *sub);

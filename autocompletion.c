@@ -191,6 +191,47 @@ char **create_cmd_argv(const char *pattern)
     return results;
 }
 
+int is_executable(const char *file)
+{
+    struct stat st;
+    if (stat(file, &st) == 0 && st.st_mode & S_IXUSR)
+        return 1;
+    return 0;
+}
+
+char *prepend_substring(char *token, const char *substring)
+{
+    size_t token_len = strlen(token);
+    size_t substring_len = strlen(substring);
+    size_t new_len = token_len + substring_len + 1;
+    char *new_token = realloc(token, new_len);
+    if (!new_token)
+        exit(1);
+    memmove(new_token + substring_len, new_token, token_len + 1);
+    memcpy(new_token, substring, substring_len);
+    return new_token;
+}
+
+char **create_exec_list(char *pattern)
+{
+    pattern += 2; // removing the ./ part
+    char **list = create_argv(pattern);
+    char **new_list = malloc(TOK_BUF_SIZE * sizeof(char *));
+    if (!new_list)
+        exit(1);
+    int counter = 0;
+    for (int i = 0; list[i] != NULL; i++)
+    {
+        if (is_executable(list[i]))
+            new_list[counter++] = prepend_substring(list[i], "./");
+        else
+            free(list[i]);
+    }
+    free(list);
+    new_list[counter] = NULL;
+    return new_list;
+}
+
 void autocomplete(char *buffer, int *position, int *cursor_pos)
 {
     if (token_to_complete && tab_count == 0)
@@ -246,7 +287,12 @@ void autocomplete(char *buffer, int *position, int *cursor_pos)
     {
         /* cmd autocomplete */
         if (tab_count == 0)
-            possible_completions = create_cmd_argv(token_to_complete);
+        {
+            if (startsWith(token_to_complete, "./"))
+                possible_completions = create_exec_list(token_to_complete);
+            else
+                possible_completions = create_cmd_argv(token_to_complete);
+        }
     }
     else if (real_tok_category == 1)
     {

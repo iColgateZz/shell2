@@ -44,6 +44,18 @@ int endsWith(const char *str, char c)
     return str[len - 1] == c;
 }
 
+int startsWith(const char *str, const char *sub)
+{
+    int i = 0;
+    while (sub[i] != '\0')
+    {
+        if (sub[i] != str[i])
+            return 0;
+        i++;
+    }
+    return 1;
+}
+
 char *trim(char *str)
 {
     char *end;
