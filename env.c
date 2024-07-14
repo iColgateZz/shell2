@@ -11,7 +11,7 @@
 
 #define LINE_LEN 256
 #define MAX_PROMPT_LEN 64
-#define CONFIG_FILE ".pshrc"
+#define CONFIG_FILE "~/.pshrc"
 
 extern Env *first_env;
 extern int last_proc_exit_status;
@@ -150,16 +150,24 @@ char **_split_string(char *str, char *c)
 void read_config_file()
 {
     char *filename = CONFIG_FILE;
+    char expanded_filename[1024];
     char line[LINE_LEN];
     FILE *file;
     char **arr;
 
-    file = fopen(filename, "r");
-    if (file == NULL)
-    {
-        my_perror("Error opening file");
-        exit(1);
+    if (filename[0] == '~') {
+        const char *home = getenv("HOME");
+        if (home)
+            snprintf(expanded_filename, sizeof(expanded_filename), "%s%s", home, filename + 1);
+        else
+            return;
+    } else {
+        strcpy(expanded_filename, filename);
     }
+
+    file = fopen(expanded_filename, "r");
+    if (file == NULL)
+        return;
 
     while (fgets(line, LINE_LEN, file))
     {

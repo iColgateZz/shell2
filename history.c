@@ -8,7 +8,7 @@ extern History *last_history;
 History *first_history = NULL;
 
 #define HISTORY_MAX_SIZE 128
-#define HISTORY_FILE ".psh_history"
+#define HISTORY_FILE "~/.psh_history"
 
 int _count_history_size()
 {
@@ -41,7 +41,19 @@ void free_history()
 /* Load the history from the file. */
 void load_history()
 {
-    FILE *file = fopen(HISTORY_FILE, "r");
+    char *filename = HISTORY_FILE;
+    char expanded_filename[1024];
+    if (filename[0] == '~') {
+        const char *home = getenv("HOME");
+        if (home)
+            snprintf(expanded_filename, sizeof(expanded_filename), "%s%s", home, filename + 1);
+        else
+            return;
+    }
+    else
+        strcpy(expanded_filename, filename);
+
+    FILE *file = fopen(expanded_filename, "r");
     int counter = 0;
     if (file)
     {
@@ -69,7 +81,21 @@ void load_history()
 /* Save the history to the file. */
 void save_history()
 {
-    FILE *file = fopen(HISTORY_FILE, "w");
+    char *filename = HISTORY_FILE;
+    char expanded_filename[1024];
+    if (filename[0] == '~') {
+        const char *home = getenv("HOME");
+        if (home)
+            snprintf(expanded_filename, sizeof(expanded_filename), "%s%s", home, filename + 1);
+        else {
+            my_fprintf(stderr, "Error saving the history to the %s file", filename);
+            return;
+        }
+    }
+    else
+        strcpy(expanded_filename, filename);
+    
+    FILE *file = fopen(expanded_filename, "w");
     if (file)
     {
         History *temp = first_history;
