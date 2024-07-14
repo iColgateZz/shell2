@@ -216,6 +216,8 @@ char **create_exec_list(char *pattern)
 {
     pattern += 2; // removing the ./ part
     char **list = create_argv(pattern);
+    if (!list)
+        return NULL;
     char **new_list = malloc(TOK_BUF_SIZE * sizeof(char *));
     if (!new_list)
         exit(1);
