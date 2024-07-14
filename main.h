@@ -40,7 +40,7 @@ typedef struct wrapper
     int exit_status;
 } wrapper;
 
-void read_line(char *buffer);
+void read_line(char *buffer, char *prompt);
 char **tokenize(char *line);
 void init_shell();
 job *create_job(char **tokens, int start, int end);

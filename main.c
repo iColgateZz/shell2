@@ -49,8 +49,7 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
-    char *prompt1 = NULL;
-    char *prompt2 = NULL;
+    char *prompt = NULL;
     /* Make sure the shell is a foreground process. */
     init_shell();
     /* Read data from a configuration file. */
@@ -65,17 +64,11 @@ int main(void)
         /* Updating the prompts for dir and branch changes.
            In case the prompt is configured via .pshrc file.  */
         if (prompt_type == 0)
-        {
-            prompt1 = configure_prompt("PS1", prompt1);
-            printf("%s", prompt1);
-        }
+            prompt = configure_prompt("PS1", prompt);
         else
-        {
-            prompt2 = configure_prompt("PS2", prompt2);
-            printf("%s", prompt2);
-        }
+            prompt = configure_prompt("PS2", prompt);
 
-        read_line(line);
+        read_line(line, prompt);
         line = trim(line);
         /* Empty command check. */
         if (line[0] == '\0')
@@ -100,9 +93,9 @@ int main(void)
             do_job_notification();
             prompt_type = 0;
             line[0] = '\0';
-            
-            free_wr_list(list); 
-            free_tokens(tokens); 
+
+            free_wr_list(list);
+            free_tokens(tokens);
         }
         else if (check_status == 1)
         { // Case when line continuation is needed.
@@ -126,8 +119,7 @@ int main(void)
 
     free_token_to_complete();
     free_possible_completions();
-    free(prompt1);
-    free(prompt2);
+    free(prompt);
     free(line);
     return 0;
 }
@@ -876,7 +868,7 @@ job *create_job(char **tokens, int start, int end)
 
 /* Read the line entered by the user. If the shell is used interactively,
    the terminal enters raw mode. Handle shortcuts, character insertion, and deletion. */
-void read_line(char *buffer)
+void read_line(char *buffer, char *prompt)
 {
     int position = strlen(buffer);
     int cursor_pos = position;
@@ -891,6 +883,8 @@ void read_line(char *buffer)
         else
             buffer[position++] = ' ';
     }
+
+    printf("%s", prompt);
 
     while (1)
     {
@@ -1106,7 +1100,13 @@ void read_line(char *buffer)
                 }
             }
         }
-        // Ctrl-L - clear screen 12
+        else if (c == 12)
+        { // Handle Ctrl-L (clear screen)
+            printf("\033[H\033[J");
+            printf("%s%s", prompt, buffer);
+            for (int i = cursor_pos; i < position; i++)
+                printf("\b");
+        }
     }
 }
 
@@ -1399,7 +1399,7 @@ void launch_job(job *j, int foreground)
         if (infile != j->stdin)
             close(infile);
         if (outfile != j->stdout)
-           close(outfile);
+            close(outfile);
         infile = mypipe[0];
 
         /* Reassign the infile in case previous process had a non-default outfile. */
