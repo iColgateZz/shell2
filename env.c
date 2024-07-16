@@ -8,9 +8,10 @@
 #include <ctype.h>
 #include <glob.h>
 #include "custom_print.h"
+#include <libgen.h>
 
 #define LINE_LEN 256
-#define MAX_PROMPT_LEN 64
+#define MAX_PROMPT_LEN 128
 #define CONFIG_FILE "~/.pshrc"
 
 extern Env *first_env;
@@ -204,18 +205,8 @@ char *_get_current_dir()
         path[strcspn(path, "\n")] = '\0';
     }
     pclose(fp);
-
-    char *temp = strtok(path, "/");
-    char *last = temp;
-    while (temp)
-    {
-        last = temp;
-        temp = strtok(NULL, "/");
-    }
-
-    if (!last)
-        last = "/";
-
+    
+    char *last = basename(path);
     char *result = strdup(last);
     if (!result)
     {
