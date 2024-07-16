@@ -202,9 +202,20 @@ int *categorize_tokens(char **tokens)
             if (strcmp(tokens[i], "\"") == 0)
                 i++;
             while (tokens[i] != NULL && !endsWith(tokens[i], '"'))
-            {
                 i++;
+            if (!tokens[i])
+            {
+                arr[pos] = END;
+                return arr;
             }
+            arr[pos++] = QUOTE_END;
+            break;
+        case '\'':
+            arr[pos++] = QUOTE;
+            if (strcmp(tokens[i], "\"") == 0)
+                i++;
+            while (tokens[i] != NULL && !endsWith(tokens[i], '\''))
+                i++;
             if (!tokens[i])
             {
                 arr[pos] = END;
@@ -800,7 +811,7 @@ job *create_job(char **tokens, int start, int end)
                 if (strcmp(tokens[j], "|") != 0)
                 {
                     // for quoting
-                    if (tokens[j][0] == '"')
+                    if (tokens[j][0] == '"' || tokens[j][0] == '\'')
                     {
                         size_t len = strlen(tokens[j]);
                         memmove(tokens[j], tokens[j] + 1, len - 1);
@@ -1127,7 +1138,7 @@ char **tokenize(char *line)
 
     for (int i = 0; i <= len; i++)
     {
-        if (line[i] == '"')
+        if (line[i] == '"' || line[i] == '\'')
         {
             in_quotes = !in_quotes;
         }
