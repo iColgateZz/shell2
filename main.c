@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
 #include <signal.h>
 #include <termios.h>
 #include <errno.h>
@@ -29,10 +30,12 @@ Env *first_env = NULL;
 History *last_history = NULL;
 History *cur_history = NULL;
 int tab_count = -1;
+int term_width;
 
 void init_line_editing();
 void disable_raw_mode();
 void free_wr_list(wrapper **list);
+int get_terminal_width();
 
 int main(void)
 {
@@ -42,6 +45,7 @@ int main(void)
     int status = 1;
     int check_status;
     int prompt_type = 0;
+    term_width = get_terminal_width();
 
     if (!line)
     {
@@ -168,7 +172,7 @@ void enable_raw_mode()
 void handle_sigwinch(int sig)
 {
     // Handle window size change if needed
-    my_printf("Resize signal caught!\n\r");
+    term_width = get_terminal_width();
 }
 
 /* Enable raw mode and set up a SIGWINCH signal listener. */
@@ -877,6 +881,27 @@ job *create_job(char **tokens, int start, int end)
     return j;
 }
 
+void clear_line(int position)
+{
+    int lines = (position + term_width - 1) / term_width;
+    for (int i = 0; i < lines; i++)
+    {
+        printf("\r");
+        for (int j = 0; j < term_width; j++)
+            printf(" ");
+        printf("\033[A");
+    }
+    printf("\r");
+    printf("\033[B");
+}
+
+int get_terminal_width()
+{
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    return w.ws_col;
+}
+
 /* Read the line entered by the user. If the shell is used interactively,
    the terminal enters raw mode. Handle shortcuts, character insertion, and deletion. */
 void read_line(char *buffer, char *prompt)
@@ -1046,20 +1071,13 @@ void read_line(char *buffer, char *prompt)
                     else
                         break;
 
-                    while (cursor_pos < position)
-                    {
-                        printf("%c", buffer[cursor_pos]);
-                        cursor_pos++;
-                    }
-                    while (cursor_pos > 0)
-                    {
-                        printf("\b \b");
-                        cursor_pos--;
-                    }
+                    clear_line(position + strlen(prompt));
+
                     memset(buffer, '\0', position);
                     position = 0;
 
                     strcpy(buffer, cur_history->line);
+                    printf("%s", prompt);
                     printf("%s", buffer);
 
                     position = strlen(buffer);
@@ -1072,16 +1090,9 @@ void read_line(char *buffer, char *prompt)
                         cur_history = NULL;
                     else
                         break;
-                    while (cursor_pos < position)
-                    {
-                        printf("%c", buffer[cursor_pos]);
-                        cursor_pos++;
-                    }
-                    while (cursor_pos > 0)
-                    {
-                        printf("\b \b");
-                        cursor_pos--;
-                    }
+
+                    clear_line(position + strlen(prompt));
+
                     memset(buffer, '\0', position);
                     position = 0;
 
@@ -1089,6 +1100,8 @@ void read_line(char *buffer, char *prompt)
                         strcpy(buffer, "");
                     else
                         strcpy(buffer, cur_history->line);
+
+                    printf("%s", prompt);
                     printf("%s", buffer);
 
                     position = strlen(buffer);
