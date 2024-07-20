@@ -40,6 +40,10 @@ int get_terminal_width();
 int main(void)
 {
     char *line = malloc(BUF_SIZE * sizeof(char));
+    /* Trim fucntion increments the pointer, which means that if you free the new pointer,
+       it will cause a segfault, as that new pointer had never been malloc'ed. To fix that
+       a temporary variable is introduced to store the original pointer. */
+    char *temp_line = line;
     char **tokens;
     wrapper **list;
     int status = 1;
@@ -114,6 +118,13 @@ int main(void)
             free_tokens(tokens);
             continue;
         }
+
+        if (temp_line != line) {
+            free(temp_line);
+            line = malloc(BUF_SIZE * sizeof(char));
+            temp_line = line;
+            line[0] = '\0';
+        }
     } while (status);
 
     if (shell_is_interactive)
@@ -123,6 +134,7 @@ int main(void)
 
     free_token_to_complete();
     free_possible_completions();
+
     free(prompt);
     free(line);
     return 0;
@@ -939,14 +951,15 @@ void read_line(char *buffer, char *prompt)
         else if (c == 9)
         { // Handle tab
             char *buf_copy = strdup(buffer);
+            char *temp = buf_copy;
             buf_copy = trim(buf_copy);
             if (buf_copy[0] == '\0')
             {
-                free(buf_copy);
+                free(temp);
                 continue;
             }
             autocomplete(buffer, &position, &cursor_pos);
-            free(buf_copy);
+            free(temp);
         }
         else if (c == 127)
         { // Handle backspace
