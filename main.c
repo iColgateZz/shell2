@@ -119,7 +119,8 @@ int main(void)
             continue;
         }
 
-        if (temp_line != line) {
+        if (temp_line != line)
+        {
             free(temp_line);
             line = malloc(BUF_SIZE * sizeof(char));
             temp_line = line;
@@ -944,6 +945,8 @@ void read_line(char *buffer, char *prompt)
 
         if (c == '\n' || c == '\r')
         {
+            while (cursor_pos < position)
+                printf("%c", buffer[cursor_pos++]);
             buffer[position] = '\0';
             my_printf("\n");
             return;
@@ -971,9 +974,7 @@ void read_line(char *buffer, char *prompt)
                 printf("\b \b");
                 printf("%s ", &buffer[cursor_pos]);
                 for (int i = 0; i <= position - cursor_pos; i++)
-                {
                     printf("\b");
-                }
             }
         }
         else if (c == 21)
@@ -986,9 +987,7 @@ void read_line(char *buffer, char *prompt)
                 printf("\b \b");
                 printf("%s ", &buffer[cursor_pos]);
                 for (int i = 0; i <= position - cursor_pos; i++)
-                {
                     printf("\b");
-                }
             }
         }
         else if (c == 11)
@@ -996,13 +995,9 @@ void read_line(char *buffer, char *prompt)
             if (cursor_pos < position)
             {
                 for (int i = cursor_pos; i < position; i++)
-                {
                     printf(" ");
-                }
                 for (int i = cursor_pos; i < position; i++)
-                {
                     printf("\b");
-                }
                 buffer[cursor_pos] = '\0';
                 position = cursor_pos;
             }
